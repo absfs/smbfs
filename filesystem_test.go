@@ -312,14 +312,16 @@ func TestFileSystem_NotImplemented(t *testing.T) {
 	}
 	defer fsys.Close()
 
-	// Test operations that are not yet implemented
+	// Test Chmod (now implemented, but will fail without real SMB server)
 	t.Run("Chmod", func(t *testing.T) {
 		err := fsys.Chmod("/test", 0644)
-		if !errors.Is(err, ErrNotImplemented) {
-			t.Errorf("Chmod() error = %v, want ErrNotImplemented", err)
+		// Without a real SMB server, this will fail with connection error
+		if err == nil {
+			t.Errorf("Chmod() expected error without server, got nil")
 		}
 	})
 
+	// Test Chown (still not implemented)
 	t.Run("Chown", func(t *testing.T) {
 		err := fsys.Chown("/test", 1000, 1000)
 		if !errors.Is(err, ErrNotImplemented) {
@@ -327,11 +329,13 @@ func TestFileSystem_NotImplemented(t *testing.T) {
 		}
 	})
 
+	// Test Chtimes (now implemented, but will fail without real SMB server)
 	t.Run("Chtimes", func(t *testing.T) {
 		now := time.Now()
 		err := fsys.Chtimes("/test", now, now)
-		if !errors.Is(err, ErrNotImplemented) {
-			t.Errorf("Chtimes() error = %v, want ErrNotImplemented", err)
+		// Without a real SMB server, this will fail with connection error
+		if err == nil {
+			t.Errorf("Chtimes() expected error without server, got nil")
 		}
 	})
 }

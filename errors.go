@@ -97,11 +97,30 @@ func convertError(err error) error {
 	return err
 }
 
+// netError interface for network errors.
+type netError interface {
+	Timeout() bool
+	Temporary() bool
+}
+
 // isRetryable returns true if the error indicates a transient failure
 // that might succeed if retried.
 func isRetryable(err error) bool {
 	if err == nil {
 		return false
+	}
+
+	// Network errors are generally retryable
+	var netErr netError
+	if errors.As(err, &netErr) {
+		// Temporary network errors are retryable
+		if netErr.Temporary() {
+			return true
+		}
+		// Timeout errors are retryable
+		if netErr.Timeout() {
+			return true
+		}
 	}
 
 	// Connection errors are typically retryable
@@ -110,6 +129,12 @@ func isRetryable(err error) bool {
 		return true
 	case errors.Is(err, ErrPoolExhausted):
 		return true
+	}
+
+	// Check wrapped errors
+	unwrapped := errors.Unwrap(err)
+	if unwrapped != nil && unwrapped != err {
+		return isRetryable(unwrapped)
 	}
 
 	return false

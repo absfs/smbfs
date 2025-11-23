@@ -8,6 +8,11 @@ import (
 	"time"
 )
 
+// Logger interface for logging operations.
+type Logger interface {
+	Printf(format string, v ...interface{})
+}
+
 // Config holds the configuration for an SMB filesystem connection.
 type Config struct {
 	// Server connection
@@ -43,6 +48,12 @@ type Config struct {
 	WriteBufferSize int           // Write buffer size (default: 64KB)
 	DirectoryCache  bool          // Enable directory metadata caching
 	CacheTTL        time.Duration // Cache TTL (default: 30s)
+
+	// Retry and reliability
+	RetryPolicy *RetryPolicy // Retry policy for failed operations (nil = use default)
+
+	// Logging
+	Logger Logger // Logger for debug and error messages (nil = no logging)
 }
 
 // setDefaults sets default values for any unspecified configuration options.

@@ -64,31 +64,41 @@ func (fsys *FileSystem) OpenFile(name string, flag int, perm fs.FileMode) (absfs
 	name = fsys.pathNorm.normalize(name)
 	smbPath := toSMBPath(name)
 
-	// Get a connection from the pool
-	conn, err := fsys.pool.get(fsys.ctx)
+	var resultFile *File
+	err := fsys.withRetry(fsys.ctx, func() error {
+		// Get a connection from the pool
+		conn, err := fsys.pool.get(fsys.ctx)
+		if err != nil {
+			return err
+		}
+
+		// Convert flags to os flags for go-smb2
+		openFlag := flag
+		if flag&os.O_CREATE != 0 {
+			openFlag = flag
+		}
+
+		// Open the file
+		file, err := conn.share.OpenFile(smbPath, openFlag, perm)
+		if err != nil {
+			fsys.pool.put(conn)
+			return convertError(err)
+		}
+
+		resultFile = &File{
+			fs:   fsys,
+			conn: conn,
+			file: file,
+			path: name,
+		}
+		return nil
+	})
+
 	if err != nil {
 		return nil, wrapPathError("open", name, err)
 	}
 
-	// Convert flags to os flags for go-smb2
-	openFlag := flag
-	if flag&os.O_CREATE != 0 {
-		openFlag = flag
-	}
-
-	// Open the file
-	file, err := conn.share.OpenFile(smbPath, openFlag, perm)
-	if err != nil {
-		fsys.pool.put(conn)
-		return nil, wrapPathError("open", name, convertError(err))
-	}
-
-	return &File{
-		fs:   fsys,
-		conn: conn,
-		file: file,
-		path: name,
-	}, nil
+	return resultFile, nil
 }
 
 // Create creates a new file for writing.
@@ -105,21 +115,31 @@ func (fsys *FileSystem) Stat(name string) (fs.FileInfo, error) {
 	name = fsys.pathNorm.normalize(name)
 	smbPath := toSMBPath(name)
 
-	conn, err := fsys.pool.get(fsys.ctx)
+	var info *fileInfo
+	err := fsys.withRetry(fsys.ctx, func() error {
+		conn, err := fsys.pool.get(fsys.ctx)
+		if err != nil {
+			return err
+		}
+		defer fsys.pool.put(conn)
+
+		stat, err := conn.share.Stat(smbPath)
+		if err != nil {
+			return convertError(err)
+		}
+
+		info = &fileInfo{
+			stat: stat,
+			name: fsys.pathNorm.base(name),
+		}
+		return nil
+	})
+
 	if err != nil {
 		return nil, wrapPathError("stat", name, err)
 	}
-	defer fsys.pool.put(conn)
 
-	stat, err := conn.share.Stat(smbPath)
-	if err != nil {
-		return nil, wrapPathError("stat", name, convertError(err))
-	}
-
-	return &fileInfo{
-		stat: stat,
-		name: fsys.pathNorm.base(name),
-	}, nil
+	return info, nil
 }
 
 // Lstat returns file information (same as Stat for SMB).
@@ -301,9 +321,25 @@ func (fsys *FileSystem) Rename(oldname, newname string) error {
 
 // Chmod changes the mode of a file.
 func (fsys *FileSystem) Chmod(name string, mode fs.FileMode) error {
-	// SMB doesn't directly support Unix permissions
-	// This would require ACL manipulation which is complex
-	return wrapPathError("chmod", name, ErrNotImplemented)
+	if err := validatePath(name); err != nil {
+		return wrapPathError("chmod", name, err)
+	}
+
+	name = fsys.pathNorm.normalize(name)
+	smbPath := toSMBPath(name)
+
+	conn, err := fsys.pool.get(fsys.ctx)
+	if err != nil {
+		return wrapPathError("chmod", name, err)
+	}
+	defer fsys.pool.put(conn)
+
+	err = conn.share.Chmod(smbPath, mode)
+	if err != nil {
+		return wrapPathError("chmod", name, convertError(err))
+	}
+
+	return nil
 }
 
 // Chown changes the owner of a file.
@@ -315,10 +351,25 @@ func (fsys *FileSystem) Chown(name string, uid, gid int) error {
 
 // Chtimes changes the access and modification times of a file.
 func (fsys *FileSystem) Chtimes(name string, atime, mtime time.Time) error {
-	// SMB2 doesn't have a direct chtimes method
-	// We would need to use SetFileInformation with FileBasicInfo
-	// For now, this is not implemented
-	return wrapPathError("chtimes", name, ErrNotImplemented)
+	if err := validatePath(name); err != nil {
+		return wrapPathError("chtimes", name, err)
+	}
+
+	name = fsys.pathNorm.normalize(name)
+	smbPath := toSMBPath(name)
+
+	conn, err := fsys.pool.get(fsys.ctx)
+	if err != nil {
+		return wrapPathError("chtimes", name, err)
+	}
+	defer fsys.pool.put(conn)
+
+	err = conn.share.Chtimes(smbPath, atime, mtime)
+	if err != nil {
+		return wrapPathError("chtimes", name, convertError(err))
+	}
+
+	return nil
 }
 
 // Close closes the filesystem and releases all resources.
