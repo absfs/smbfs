@@ -23,11 +23,21 @@ func newPathNormalizer(caseSensitive bool) *pathNormalizer {
 //   - Unix-style: /path/to/file
 //   - SMB URL: smb://server/share/path/to/file
 func (pn *pathNormalizer) normalize(p string) string {
+	// Empty path becomes root
+	if p == "" {
+		return "/"
+	}
+
 	// Convert Windows separators to forward slashes
 	p = strings.ReplaceAll(p, "\\", "/")
 
 	// Clean the path (removes .., ., multiple slashes, etc.)
 	p = path.Clean(p)
+
+	// path.Clean converts "." to ".", so handle it
+	if p == "." {
+		p = "/"
+	}
 
 	// Ensure the path starts with /
 	if !strings.HasPrefix(p, "/") {
