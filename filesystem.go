@@ -14,6 +14,7 @@ type FileSystem struct {
 	config   *Config
 	pool     *connectionPool
 	pathNorm *pathNormalizer
+	cache    *metadataCache
 	ctx      context.Context
 	cancel   context.CancelFunc
 }
@@ -39,6 +40,7 @@ func New(config *Config) (*FileSystem, error) {
 		config:   config,
 		pool:     newConnectionPool(config),
 		pathNorm: newPathNormalizer(config.CaseSensitive),
+		cache:    newMetadataCache(config.Cache),
 		ctx:      ctx,
 		cancel:   cancel,
 	}
@@ -98,6 +100,11 @@ func (fsys *FileSystem) OpenFile(name string, flag int, perm fs.FileMode) (absfs
 		return nil, wrapPathError("open", name, err)
 	}
 
+	// Invalidate cache if file was created
+	if flag&os.O_CREATE != 0 {
+		fsys.cache.invalidate(name)
+	}
+
 	return resultFile, nil
 }
 
@@ -113,6 +120,12 @@ func (fsys *FileSystem) Stat(name string) (fs.FileInfo, error) {
 	}
 
 	name = fsys.pathNorm.normalize(name)
+
+	// Check cache first
+	if cachedInfo, ok := fsys.cache.getStatInfo(name); ok {
+		return cachedInfo, nil
+	}
+
 	smbPath := toSMBPath(name)
 
 	var info *fileInfo
@@ -139,6 +152,9 @@ func (fsys *FileSystem) Stat(name string) (fs.FileInfo, error) {
 		return nil, wrapPathError("stat", name, err)
 	}
 
+	// Cache the result
+	fsys.cache.putStatInfo(name, info)
+
 	return info, nil
 }
 
@@ -154,6 +170,11 @@ func (fsys *FileSystem) ReadDir(name string) ([]fs.DirEntry, error) {
 	}
 
 	name = fsys.pathNorm.normalize(name)
+
+	// Check cache first
+	if cachedEntries, ok := fsys.cache.getDirEntries(name); ok {
+		return cachedEntries, nil
+	}
 
 	f, err := fsys.Open(name)
 	if err != nil {
@@ -173,7 +194,15 @@ func (fsys *FileSystem) ReadDir(name string) ([]fs.DirEntry, error) {
 
 	// Read directory entries
 	file := f.(*File)
-	return file.ReadDir(-1)
+	entries, err := file.ReadDir(-1)
+	if err != nil {
+		return nil, err
+	}
+
+	// Cache the result
+	fsys.cache.putDirEntries(name, entries)
+
+	return entries, nil
 }
 
 // Mkdir creates a directory.
@@ -195,6 +224,9 @@ func (fsys *FileSystem) Mkdir(name string, perm fs.FileMode) error {
 	if err != nil {
 		return wrapPathError("mkdir", name, convertError(err))
 	}
+
+	// Invalidate cache for the new directory and its parent
+	fsys.cache.invalidate(name)
 
 	return nil
 }
@@ -246,6 +278,9 @@ func (fsys *FileSystem) Remove(name string) error {
 	if err != nil {
 		return wrapPathError("remove", name, convertError(err))
 	}
+
+	// Invalidate cache for the removed file and its parent directory
+	fsys.cache.invalidate(name)
 
 	return nil
 }
@@ -316,6 +351,10 @@ func (fsys *FileSystem) Rename(oldname, newname string) error {
 		return wrapPathError("rename", oldname, convertError(err))
 	}
 
+	// Invalidate cache for both old and new paths and their parent directories
+	fsys.cache.invalidate(oldname)
+	fsys.cache.invalidate(newname)
+
 	return nil
 }
 
@@ -338,6 +377,9 @@ func (fsys *FileSystem) Chmod(name string, mode fs.FileMode) error {
 	if err != nil {
 		return wrapPathError("chmod", name, convertError(err))
 	}
+
+	// Invalidate stat cache since metadata changed
+	fsys.cache.invalidate(name)
 
 	return nil
 }
@@ -368,6 +410,9 @@ func (fsys *FileSystem) Chtimes(name string, atime, mtime time.Time) error {
 	if err != nil {
 		return wrapPathError("chtimes", name, convertError(err))
 	}
+
+	// Invalidate stat cache since metadata changed
+	fsys.cache.invalidate(name)
 
 	return nil
 }

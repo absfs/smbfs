@@ -44,10 +44,9 @@ type Config struct {
 	FollowSymlinks bool // Follow Windows symlinks/junctions
 
 	// Performance
-	ReadBufferSize  int           // Read buffer size (default: 64KB)
-	WriteBufferSize int           // Write buffer size (default: 64KB)
-	DirectoryCache  bool          // Enable directory metadata caching
-	CacheTTL        time.Duration // Cache TTL (default: 30s)
+	ReadBufferSize  int         // Read buffer size (default: 64KB)
+	WriteBufferSize int         // Write buffer size (default: 64KB)
+	Cache           CacheConfig // Metadata caching configuration
 
 	// Retry and reliability
 	RetryPolicy *RetryPolicy // Retry policy for failed operations (nil = use default)
@@ -82,8 +81,9 @@ func (c *Config) setDefaults() {
 	if c.WriteBufferSize == 0 {
 		c.WriteBufferSize = 64 * 1024 // 64KB
 	}
-	if c.CacheTTL == 0 {
-		c.CacheTTL = 30 * time.Second
+	// Set default cache config if not specified
+	if c.Cache.MaxCacheEntries == 0 {
+		c.Cache = DefaultCacheConfig()
 	}
 }
 

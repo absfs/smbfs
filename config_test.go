@@ -23,7 +23,7 @@ func TestConfig_setDefaults(t *testing.T) {
 				OpTimeout:       60 * time.Second,
 				ReadBufferSize:  64 * 1024,
 				WriteBufferSize: 64 * 1024,
-				CacheTTL:        30 * time.Second,
+				Cache:           DefaultCacheConfig(),
 			},
 		},
 		{
@@ -43,7 +43,7 @@ func TestConfig_setDefaults(t *testing.T) {
 				OpTimeout:       120 * time.Second,
 				ReadBufferSize:  64 * 1024,
 				WriteBufferSize: 64 * 1024,
-				CacheTTL:        30 * time.Second,
+				Cache:           DefaultCacheConfig(),
 			},
 		},
 	}
@@ -76,8 +76,8 @@ func TestConfig_setDefaults(t *testing.T) {
 			if tt.config.WriteBufferSize != tt.expected.WriteBufferSize {
 				t.Errorf("WriteBufferSize = %d, want %d", tt.config.WriteBufferSize, tt.expected.WriteBufferSize)
 			}
-			if tt.config.CacheTTL != tt.expected.CacheTTL {
-				t.Errorf("CacheTTL = %v, want %v", tt.config.CacheTTL, tt.expected.CacheTTL)
+			if tt.config.Cache.MaxCacheEntries != tt.expected.Cache.MaxCacheEntries {
+				t.Errorf("Cache.MaxCacheEntries = %d, want %d", tt.config.Cache.MaxCacheEntries, tt.expected.Cache.MaxCacheEntries)
 			}
 		})
 	}
