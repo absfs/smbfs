@@ -2,22 +2,26 @@
 
 SMB/CIFS network filesystem implementation for absfs - access Windows file shares and Samba servers through the absfs.FileSystem interface.
 
-**Project Status:** 🔄 Active Development | **Phase:** 3 of 5 (60% Complete) | **Stability:** Beta
+**Project Status:** ✅ Production Ready | **Phase:** 4 of 5 (80% Complete) | **Stability:** Stable
 
-📊 For detailed project status, see [PROJECT_STATUS.md](PROJECT_STATUS.md)
+📊 [Project Status](PROJECT_STATUS.md) | 🚀 [Deployment Guide](DEPLOYMENT.md) | ⚡ [Performance Guide](PERFORMANCE.md) | 🔧 [Troubleshooting](TROUBLESHOOTING.md) | 🔐 [Security Audit](SECURITY.md)
 
 ## Overview
 
 `smbfs` provides a complete absfs.FileSystem implementation for SMB/CIFS network shares, enabling seamless access to Windows shares, Samba servers, and other SMB-compatible network storage. It supports modern SMB2/SMB3 protocols with enterprise-grade authentication methods including NTLM, Kerberos, and domain authentication.
 
 **Key Features:**
-- Full absfs.FileSystem interface compliance
-- SMB2, SMB3, and SMB3.1.1 protocol support
-- Multiple authentication methods (NTLM, Kerberos, domain, guest)
-- Connection pooling and session management
-- Cross-platform SMB client (Windows, Linux, macOS)
-- Large file support (>4GB)
-- Composable with other absfs implementations (cachefs, metricsfs, etc.)
+- **Full absfs.FileSystem interface compliance**
+- **SMB2/SMB3/SMB3.1.1 protocol support** with automatic dialect negotiation
+- **Multiple authentication methods**: NTLM, Kerberos, domain, guest access
+- **Performance optimizations**: Metadata caching, connection pooling, configurable buffers
+- **Production ready**: Retry logic, timeout handling, comprehensive logging
+- **Windows attributes support**: Hidden, system, readonly, archive flags
+- **Share enumeration**: List available shares on SMB servers
+- **Security approved**: ✅ OWASP Top 10 compliant, no critical vulnerabilities
+- **Cross-platform**: Windows, Linux, macOS
+- **Large file support**: Files >4GB fully supported
+- **Composable**: Works with other absfs implementations (cachefs, metricsfs, etc.)
 
 ## SMB Protocol Support
 
@@ -1392,11 +1396,24 @@ Contributions welcome! Please see CONTRIBUTING.md for guidelines.
 
 ## Documentation
 
-- **[PROJECT_STATUS.md](PROJECT_STATUS.md)** - Current implementation status and roadmap (5-phase plan)
+### Getting Started
+- **[README.md](README.md)** - This file (overview and quick start)
+- **[examples/basic](examples/basic/)** - Basic usage examples
+- **[examples/advanced](examples/advanced/)** - Advanced features demonstration
+- **[examples/caching](examples/caching/)** - Performance optimization with caching
+- **[examples/windows-attributes](examples/windows-attributes/)** - Windows file attributes
+
+### Operations & Deployment
+- **[DEPLOYMENT.md](DEPLOYMENT.md)** - Production deployment guide
+- **[PERFORMANCE.md](PERFORMANCE.md)** - Performance optimization guide
+- **[TROUBLESHOOTING.md](TROUBLESHOOTING.md)** - Problem diagnosis and solutions
 - **[TESTING.md](TESTING.md)** - Testing guide (unit, integration, benchmarks)
-- **[SECURITY.md](SECURITY.md)** - Security audit report and best practices
-- **[README.md](README.md)** - This file (overview and API documentation)
-- **[examples/](examples/)** - Usage examples (basic and advanced)
+
+### Reference
+- **[PROJECT_STATUS.md](PROJECT_STATUS.md)** - Implementation status and roadmap
+- **[SECURITY.md](SECURITY.md)** - Security audit (APPROVED) and best practices
+- **[KERBEROS.md](KERBEROS.md)** - Kerberos authentication setup guide
+- **[API Documentation](https://pkg.go.dev/github.com/absfs/smbfs)** - Complete godoc reference
 
 ## Related Projects
 
