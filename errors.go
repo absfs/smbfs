@@ -1,0 +1,116 @@
+package smbfs
+
+import (
+	"errors"
+	"fmt"
+	"io/fs"
+)
+
+var (
+	// ErrNotImplemented indicates a feature is not yet implemented.
+	ErrNotImplemented = errors.New("not implemented")
+
+	// ErrInvalidConfig indicates the configuration is invalid.
+	ErrInvalidConfig = errors.New("invalid configuration")
+
+	// ErrConnectionClosed indicates the connection has been closed.
+	ErrConnectionClosed = errors.New("connection closed")
+
+	// ErrPoolExhausted indicates all connections in the pool are in use.
+	ErrPoolExhausted = errors.New("connection pool exhausted")
+
+	// ErrAuthenticationFailed indicates authentication failed.
+	ErrAuthenticationFailed = errors.New("authentication failed")
+
+	// ErrUnsupportedDialect indicates the SMB dialect is not supported.
+	ErrUnsupportedDialect = errors.New("unsupported SMB dialect")
+
+	// ErrInvalidPath indicates the path is invalid.
+	ErrInvalidPath = errors.New("invalid path")
+
+	// ErrNotDirectory indicates the path is not a directory.
+	ErrNotDirectory = errors.New("not a directory")
+
+	// ErrIsDirectory indicates the path is a directory.
+	ErrIsDirectory = errors.New("is a directory")
+)
+
+// PathError records an error and the operation and path that caused it.
+type PathError struct {
+	Op   string
+	Path string
+	Err  error
+}
+
+func (e *PathError) Error() string {
+	return fmt.Sprintf("%s %s: %v", e.Op, e.Path, e.Err)
+}
+
+func (e *PathError) Unwrap() error {
+	return e.Err
+}
+
+// wrapPathError wraps an error with operation and path information.
+func wrapPathError(op, path string, err error) error {
+	if err == nil {
+		return nil
+	}
+
+	// If it's already a PathError for the same path, don't double-wrap
+	var pe *PathError
+	if errors.As(err, &pe) && pe.Path == path {
+		return err
+	}
+
+	return &PathError{
+		Op:   op,
+		Path: path,
+		Err:  err,
+	}
+}
+
+// convertError converts common errors to fs package errors.
+func convertError(err error) error {
+	if err == nil {
+		return nil
+	}
+
+	// Already a standard error
+	if errors.Is(err, fs.ErrNotExist) ||
+		errors.Is(err, fs.ErrExist) ||
+		errors.Is(err, fs.ErrPermission) ||
+		errors.Is(err, fs.ErrInvalid) ||
+		errors.Is(err, fs.ErrClosed) {
+		return err
+	}
+
+	// Map our errors to standard fs errors
+	switch {
+	case errors.Is(err, ErrConnectionClosed):
+		return fs.ErrClosed
+	case errors.Is(err, ErrInvalidPath):
+		return fs.ErrInvalid
+	case errors.Is(err, ErrAuthenticationFailed):
+		return fs.ErrPermission
+	}
+
+	return err
+}
+
+// isRetryable returns true if the error indicates a transient failure
+// that might succeed if retried.
+func isRetryable(err error) bool {
+	if err == nil {
+		return false
+	}
+
+	// Connection errors are typically retryable
+	switch {
+	case errors.Is(err, ErrConnectionClosed):
+		return true
+	case errors.Is(err, ErrPoolExhausted):
+		return true
+	}
+
+	return false
+}
