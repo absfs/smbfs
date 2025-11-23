@@ -315,24 +315,9 @@ func (fsys *FileSystem) Chown(name string, uid, gid int) error {
 
 // Chtimes changes the access and modification times of a file.
 func (fsys *FileSystem) Chtimes(name string, atime, mtime time.Time) error {
-	if err := validatePath(name); err != nil {
-		return wrapPathError("chtimes", name, err)
-	}
-
-	name = fsys.pathNorm.normalize(name)
-	smbPath := toSMBPath(name)
-
-	conn, err := fsys.pool.get(fsys.ctx)
-	if err != nil {
-		return wrapPathError("chtimes", name, err)
-	}
-	defer fsys.pool.put(conn)
-
 	// SMB2 doesn't have a direct chtimes method
 	// We would need to use SetFileInformation with FileBasicInfo
 	// For now, this is not implemented
-	_ = smbPath // silence unused warning
-
 	return wrapPathError("chtimes", name, ErrNotImplemented)
 }
 
