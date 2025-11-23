@@ -11,12 +11,14 @@ import (
 
 func main() {
 	// Example 1: Connect to Windows file share with username/password
+	// For advanced features like retry logic and logging, see examples/advanced/
 	fsys, err := smbfs.New(&smbfs.Config{
 		Server:   os.Getenv("SMB_SERVER"),   // e.g., "fileserver.corp.example.com"
 		Share:    os.Getenv("SMB_SHARE"),    // e.g., "departments"
 		Username: os.Getenv("SMB_USERNAME"), // e.g., "jdoe"
 		Password: os.Getenv("SMB_PASSWORD"), // e.g., "secret123"
 		Domain:   os.Getenv("SMB_DOMAIN"),   // e.g., "CORP" (optional)
+		// Optional: Add RetryPolicy and Logger for production use
 	})
 	if err != nil {
 		log.Fatal(err)

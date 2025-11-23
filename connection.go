@@ -159,14 +159,22 @@ func (p *connectionPool) put(conn *pooledConn) {
 
 // createConnection creates a new SMB connection.
 func (p *connectionPool) createConnection(ctx context.Context) (*pooledConn, error) {
+	addr := fmt.Sprintf("%s:%d", p.config.Server, p.config.Port)
+
+	if p.config.Logger != nil {
+		p.config.Logger.Printf("Creating new SMB connection to %s", addr)
+	}
+
 	// Create TCP connection with timeout
 	dialer := &net.Dialer{
 		Timeout: p.config.ConnTimeout,
 	}
 
-	addr := fmt.Sprintf("%s:%d", p.config.Server, p.config.Port)
 	netConn, err := dialer.DialContext(ctx, "tcp", addr)
 	if err != nil {
+		if p.config.Logger != nil {
+			p.config.Logger.Printf("Failed to connect to %s: %v", addr, err)
+		}
 		return nil, fmt.Errorf("failed to connect to %s: %w", addr, err)
 	}
 
@@ -182,6 +190,9 @@ func (p *connectionPool) createConnection(ctx context.Context) (*pooledConn, err
 	session, err := d.Dial(netConn)
 	if err != nil {
 		netConn.Close()
+		if p.config.Logger != nil {
+			p.config.Logger.Printf("SMB session setup failed: %v", err)
+		}
 		return nil, fmt.Errorf("SMB session setup failed: %w", err)
 	}
 
@@ -190,6 +201,9 @@ func (p *connectionPool) createConnection(ctx context.Context) (*pooledConn, err
 	if err != nil {
 		session.Logoff()
 		netConn.Close()
+		if p.config.Logger != nil {
+			p.config.Logger.Printf("Failed to mount share %s: %v", p.config.Share, err)
+		}
 		return nil, fmt.Errorf("failed to mount share %s: %w", p.config.Share, err)
 	}
 
@@ -204,6 +218,10 @@ func (p *connectionPool) createConnection(ctx context.Context) (*pooledConn, err
 	p.mu.Lock()
 	p.connections = append(p.connections, conn)
 	p.mu.Unlock()
+
+	if p.config.Logger != nil {
+		p.config.Logger.Printf("Successfully created SMB connection to %s (total connections: %d)", addr, p.numOpen)
+	}
 
 	return conn, nil
 }
@@ -231,6 +249,10 @@ func (p *connectionPool) Close() error {
 
 	if p.closed {
 		return nil
+	}
+
+	if p.config.Logger != nil {
+		p.config.Logger.Printf("Closing connection pool (%d connections)", len(p.connections))
 	}
 
 	p.closed = true
