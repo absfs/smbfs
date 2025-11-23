@@ -189,6 +189,18 @@ func (fi *fileInfo) Sys() any {
 	return fi.stat.Sys()
 }
 
+// WindowsAttributes returns the Windows file attributes if available.
+// Returns nil if attributes cannot be determined.
+func (fi *fileInfo) WindowsAttributes() *WindowsAttributes {
+	// Try to extract Windows attributes from the underlying stat
+	if sys := fi.stat.Sys(); sys != nil {
+		// The go-smb2 library may provide attributes through Sys()
+		// This is a placeholder for actual extraction
+		// In practice, we would need to check the concrete type
+	}
+	return nil
+}
+
 // dirEntry implements fs.DirEntry.
 type dirEntry struct {
 	info *fileInfo
