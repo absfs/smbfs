@@ -2,6 +2,10 @@
 
 SMB/CIFS network filesystem implementation for absfs - access Windows file shares and Samba servers through the absfs.FileSystem interface.
 
+**Project Status:** 🔄 Active Development | **Phase:** 3 of 5 (60% Complete) | **Stability:** Beta
+
+📊 For detailed project status, see [PROJECT_STATUS.md](PROJECT_STATUS.md)
+
 ## Overview
 
 `smbfs` provides a complete absfs.FileSystem implementation for SMB/CIFS network shares, enabling seamless access to Windows shares, Samba servers, and other SMB-compatible network storage. It supports modern SMB2/SMB3 protocols with enterprise-grade authentication methods including NTLM, Kerberos, and domain authentication.
@@ -1385,6 +1389,14 @@ MIT License - see LICENSE file for details
 ## Contributing
 
 Contributions welcome! Please see CONTRIBUTING.md for guidelines.
+
+## Documentation
+
+- **[PROJECT_STATUS.md](PROJECT_STATUS.md)** - Current implementation status and roadmap (5-phase plan)
+- **[TESTING.md](TESTING.md)** - Testing guide (unit, integration, benchmarks)
+- **[SECURITY.md](SECURITY.md)** - Security audit report and best practices
+- **[README.md](README.md)** - This file (overview and API documentation)
+- **[examples/](examples/)** - Usage examples (basic and advanced)
 
 ## Related Projects
 
