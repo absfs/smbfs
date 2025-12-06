@@ -44,3 +44,8 @@ credentials
 *.pem
 secrets.yaml
 .env
+
+# Claude-related files
+.claude/
+CLAUDE.md
+.project_meta/
