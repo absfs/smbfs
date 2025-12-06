@@ -1,7 +1,6 @@
 package main
 
 import (
-	"context"
 	"fmt"
 	"log"
 	"os"
@@ -43,7 +42,7 @@ func main() {
 	}
 	defer fsys.Close()
 
-	fmt.Println("=== Caching Performance Example ===\n")
+	fmt.Println("=== Caching Performance Example ===")
 
 	// Example 1: Demonstrate cache effectiveness
 	fmt.Println("1. Cache Performance Test:")

@@ -461,3 +461,33 @@ func (fsys *FileSystem) Separator() uint8 {
 func (fsys *FileSystem) ListSeparator() uint8 {
 	return ':'
 }
+
+// NewWithFactory creates a new SMB filesystem with a custom connection factory.
+// This is primarily used for testing with mock connections.
+func NewWithFactory(config *Config, factory ConnectionFactory) (*FileSystem, error) {
+	if config == nil {
+		return nil, ErrInvalidConfig
+	}
+
+	// Set defaults and validate
+	config.setDefaults()
+	if err := config.Validate(); err != nil {
+		return nil, err
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+
+	fs := &FileSystem{
+		config:   config,
+		pool:     newConnectionPoolWithFactory(config, factory),
+		pathNorm: newPathNormalizer(config.CaseSensitive),
+		cache:    newMetadataCache(config.Cache),
+		ctx:      ctx,
+		cancel:   cancel,
+	}
+
+	// Start background cleanup
+	fs.pool.startCleanup(ctx)
+
+	return fs, nil
+}

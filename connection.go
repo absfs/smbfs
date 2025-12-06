@@ -12,7 +12,8 @@ import (
 
 // connectionPool manages a pool of SMB connections.
 type connectionPool struct {
-	config *Config
+	config  *Config
+	factory ConnectionFactory
 
 	mu          sync.Mutex
 	connections []*pooledConn
@@ -23,8 +24,8 @@ type connectionPool struct {
 
 // pooledConn wraps an SMB connection with metadata.
 type pooledConn struct {
-	session   *smb2.Session
-	share     *smb2.Share
+	session   SMBSession
+	share     SMBShare
 	createdAt time.Time
 	lastUsed  time.Time
 	inUse     bool
@@ -35,6 +36,18 @@ type pooledConn struct {
 func newConnectionPool(config *Config) *connectionPool {
 	return &connectionPool{
 		config:      config,
+		factory:     nil, // Uses default createConnection
+		connections: make([]*pooledConn, 0, config.MaxOpen),
+		waiters:     make([]chan *pooledConn, 0),
+	}
+}
+
+// newConnectionPoolWithFactory creates a new connection pool with a custom factory.
+// This is used for testing with mock connections.
+func newConnectionPoolWithFactory(config *Config, factory ConnectionFactory) *connectionPool {
+	return &connectionPool{
+		config:      config,
+		factory:     factory,
 		connections: make([]*pooledConn, 0, config.MaxOpen),
 		waiters:     make([]chan *pooledConn, 0),
 	}
@@ -159,6 +172,34 @@ func (p *connectionPool) put(conn *pooledConn) {
 
 // createConnection creates a new SMB connection.
 func (p *connectionPool) createConnection(ctx context.Context) (*pooledConn, error) {
+	// Use factory if available (for testing)
+	if p.factory != nil {
+		session, share, err := p.factory.CreateConnection(p.config)
+		if err != nil {
+			return nil, err
+		}
+
+		conn := &pooledConn{
+			session:   session,
+			share:     share,
+			createdAt: time.Now(),
+			lastUsed:  time.Now(),
+			inUse:     true,
+		}
+
+		p.mu.Lock()
+		p.connections = append(p.connections, conn)
+		p.mu.Unlock()
+
+		return conn, nil
+	}
+
+	// Default behavior: create real SMB connection
+	return p.createRealConnection(ctx)
+}
+
+// createRealConnection creates a real SMB connection using go-smb2.
+func (p *connectionPool) createRealConnection(ctx context.Context) (*pooledConn, error) {
 	addr := fmt.Sprintf("%s:%d", p.config.Server, p.config.Port)
 
 	if p.config.Logger != nil {
@@ -208,8 +249,8 @@ func (p *connectionPool) createConnection(ctx context.Context) (*pooledConn, err
 	}
 
 	conn := &pooledConn{
-		session:   session,
-		share:     share,
+		session:   &realSMBSession{session: session},
+		share:     &realSMBShare{share: share},
 		createdAt: time.Now(),
 		lastUsed:  time.Now(),
 		inUse:     true,
@@ -312,4 +353,37 @@ func (p *connectionPool) startCleanup(ctx context.Context) {
 			}
 		}
 	}()
+}
+
+// Stats returns pool statistics for monitoring.
+type PoolStats struct {
+	TotalConnections int
+	ActiveConnections int
+	IdleConnections  int
+	WaitersCount     int
+	IsClosed         bool
+}
+
+// Stats returns current pool statistics.
+func (p *connectionPool) Stats() PoolStats {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	active := 0
+	idle := 0
+	for _, conn := range p.connections {
+		if conn.inUse {
+			active++
+		} else {
+			idle++
+		}
+	}
+
+	return PoolStats{
+		TotalConnections:  len(p.connections),
+		ActiveConnections: active,
+		IdleConnections:   idle,
+		WaitersCount:      len(p.waiters),
+		IsClosed:          p.closed,
+	}
 }

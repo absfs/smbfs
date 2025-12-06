@@ -3,17 +3,14 @@ package smbfs
 import (
 	"io"
 	"io/fs"
-	"os"
 	"time"
-
-	"github.com/hirochachacha/go-smb2"
 )
 
 // File represents an open file on an SMB share.
 type File struct {
 	fs       *FileSystem
 	conn     *pooledConn
-	file     *smb2.File
+	file     SMBFile
 	path     string
 	offset   int64
 	dirEntry []fs.DirEntry
@@ -161,7 +158,7 @@ func (f *File) ReadDir(n int) ([]fs.DirEntry, error) {
 
 // fileInfo implements fs.FileInfo for SMB files.
 type fileInfo struct {
-	stat os.FileInfo
+	stat fs.FileInfo
 	name string
 }
 
