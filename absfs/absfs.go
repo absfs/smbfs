@@ -58,6 +58,18 @@ type FileSystem interface {
 
 	// ListSeparator returns the OS-specific path list separator.
 	ListSeparator() uint8
+
+	// Chdir changes the current working directory.
+	Chdir(dir string) error
+
+	// Getwd returns the current working directory.
+	Getwd() (dir string, err error)
+
+	// TempDir returns the default directory for temporary files.
+	TempDir() string
+
+	// Truncate changes the size of the named file.
+	Truncate(name string, size int64) error
 }
 
 // File is the interface that wraps file operations.
@@ -73,4 +85,7 @@ type File interface {
 	// If n > 0, ReadDir returns at most n DirEntry structures.
 	// If n <= 0, ReadDir returns all the DirEntry values from the directory.
 	ReadDir(n int) ([]fs.DirEntry, error)
+
+	// Truncate changes the size of the file.
+	Truncate(size int64) error
 }

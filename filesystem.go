@@ -417,6 +417,40 @@ func (fsys *FileSystem) Chtimes(name string, atime, mtime time.Time) error {
 	return nil
 }
 
+// TempDir returns the default directory for temporary files.
+// For SMB filesystems, this returns "/tmp" which can be created on the share.
+func (fsys *FileSystem) TempDir() string {
+	return "/tmp"
+}
+
+// Truncate changes the size of the named file.
+func (fsys *FileSystem) Truncate(name string, size int64) error {
+	if err := validatePath(name); err != nil {
+		return wrapPathError("truncate", name, err)
+	}
+
+	name = fsys.pathNorm.normalize(name)
+
+	// Open the file for writing
+	f, err := fsys.OpenFile(name, os.O_WRONLY, 0)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+
+	// Use the file's Truncate method
+	file := f.(*File)
+	err = file.Truncate(size)
+	if err != nil {
+		return wrapPathError("truncate", name, err)
+	}
+
+	// Invalidate cache since file size changed
+	fsys.cache.invalidate(name)
+
+	return nil
+}
+
 // Close closes the filesystem and releases all resources.
 func (fsys *FileSystem) Close() error {
 	fsys.cancel()
@@ -450,6 +484,34 @@ func convertFlags(flag int) (accessMode uint32, createDisposition uint32) {
 	}
 
 	return accessMode, createDisposition
+}
+
+// Chdir changes the current working directory.
+// For SMB filesystems, this is not typically used as paths are absolute.
+func (fsys *FileSystem) Chdir(dir string) error {
+	// SMB doesn't have a concept of current working directory
+	// We could track it internally if needed, but for now we just validate the path exists
+	if err := validatePath(dir); err != nil {
+		return wrapPathError("chdir", dir, err)
+	}
+
+	dir = fsys.pathNorm.normalize(dir)
+	info, err := fsys.Stat(dir)
+	if err != nil {
+		return err
+	}
+
+	if !info.IsDir() {
+		return wrapPathError("chdir", dir, ErrNotDirectory)
+	}
+
+	return nil
+}
+
+// Getwd returns the current working directory.
+// For SMB filesystems, this always returns "/" as there's no real working directory concept.
+func (fsys *FileSystem) Getwd() (string, error) {
+	return "/", nil
 }
 
 // Separator returns the path separator for this filesystem.
