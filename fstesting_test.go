@@ -81,7 +81,7 @@ func (f *fileAdapter) ReadAt(p []byte, off int64) (n int, err error) {
 	if err != nil {
 		return 0, err
 	}
-	defer f.File.Seek(currentOffset, 0) // SEEK_SET
+	defer func() { _, _ = f.File.Seek(currentOffset, 0) }() // SEEK_SET
 
 	// Seek to offset and read
 	_, err = f.File.Seek(off, 0) // SEEK_SET
@@ -98,7 +98,7 @@ func (f *fileAdapter) WriteAt(p []byte, off int64) (n int, err error) {
 	if err != nil {
 		return 0, err
 	}
-	defer f.File.Seek(currentOffset, 0) // SEEK_SET
+	defer func() { _, _ = f.File.Seek(currentOffset, 0) }() // SEEK_SET
 
 	// Seek to offset and write
 	_, err = f.File.Seek(off, 0) // SEEK_SET

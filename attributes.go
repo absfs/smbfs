@@ -207,17 +207,6 @@ type FileInfoEx interface {
 	WindowsAttributes() *WindowsAttributes
 }
 
-// fileInfoWithAttrs wraps os.FileInfo with Windows attributes.
-type fileInfoWithAttrs struct {
-	fs.FileInfo
-	winAttrs *WindowsAttributes
-}
-
-// WindowsAttributes returns the Windows file attributes.
-func (fi *fileInfoWithAttrs) WindowsAttributes() *WindowsAttributes {
-	return fi.winAttrs
-}
-
 // GetWindowsAttributes attempts to extract Windows attributes from fs.FileInfo.
 // Returns nil if the FileInfo doesn't support Windows attributes.
 func GetWindowsAttributes(info fs.FileInfo) *WindowsAttributes {
@@ -226,11 +215,10 @@ func GetWindowsAttributes(info fs.FileInfo) *WindowsAttributes {
 	}
 
 	// Try to extract from os.FileInfo.Sys()
-	if sys := info.Sys(); sys != nil {
-		// On Windows, sys contains *syscall.Win32FileAttributeData
-		// On Unix with SMB, we might get other types
-		// This is a placeholder for potential future extraction
-	}
+	// On Windows, sys contains *syscall.Win32FileAttributeData
+	// On Unix with SMB, we might get other types
+	// This is a placeholder for potential future extraction
+	_ = info.Sys()
 
 	return nil
 }
@@ -247,7 +235,6 @@ func attributesToMode(attrs uint32, isDir bool) fs.FileMode {
 
 	// Add directory flag
 	if isDir || attrs&FILE_ATTRIBUTE_DIRECTORY != 0 {
-		mode |= fs.ModeDir
 		if attrs&FILE_ATTRIBUTE_READONLY != 0 {
 			mode = fs.ModeDir | 0555 // Read/execute for all
 		} else {

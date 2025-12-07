@@ -240,7 +240,7 @@ func (p *connectionPool) createRealConnection(ctx context.Context) (*pooledConn,
 	// Connect to share
 	share, err := session.Mount(p.config.Share)
 	if err != nil {
-		session.Logoff()
+		_ = session.Logoff()
 		netConn.Close()
 		if p.config.Logger != nil {
 			p.config.Logger.Printf("Failed to mount share %s: %v", p.config.Share, err)
@@ -273,12 +273,12 @@ func (pc *pooledConn) close() {
 	defer pc.mu.Unlock()
 
 	if pc.share != nil {
-		pc.share.Umount()
+		_ = pc.share.Umount()
 		pc.share = nil
 	}
 
 	if pc.session != nil {
-		pc.session.Logoff()
+		_ = pc.session.Logoff()
 		pc.session = nil
 	}
 }

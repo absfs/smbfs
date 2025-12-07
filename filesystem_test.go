@@ -2,6 +2,7 @@ package smbfs
 
 import (
 	"errors"
+	"io/fs"
 	"os"
 	"testing"
 	"time"
@@ -246,7 +247,7 @@ func TestFileSystem_PathValidation(t *testing.T) {
 			path:    "",
 			wantErr: true,
 			checkErr: func(err error) bool {
-				var pathErr *PathError
+				var pathErr *fs.PathError
 				return err != nil &&
 					errors.As(err, &pathErr) &&
 					errors.Is(pathErr.Err, ErrInvalidPath)
@@ -257,7 +258,7 @@ func TestFileSystem_PathValidation(t *testing.T) {
 			path:    "/path/to\x00/file",
 			wantErr: true,
 			checkErr: func(err error) bool {
-				var pathErr *PathError
+				var pathErr *fs.PathError
 				return err != nil &&
 					errors.As(err, &pathErr) &&
 					errors.Is(pathErr.Err, ErrInvalidPath)
@@ -268,7 +269,7 @@ func TestFileSystem_PathValidation(t *testing.T) {
 			path:    "../../etc/passwd",
 			wantErr: true,
 			checkErr: func(err error) bool {
-				var pathErr *PathError
+				var pathErr *fs.PathError
 				return err != nil &&
 					errors.As(err, &pathErr) &&
 					errors.Is(pathErr.Err, ErrInvalidPath)

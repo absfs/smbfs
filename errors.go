@@ -2,7 +2,6 @@ package smbfs
 
 import (
 	"errors"
-	"fmt"
 	"io/fs"
 )
 
@@ -35,34 +34,20 @@ var (
 	ErrIsDirectory = errors.New("is a directory")
 )
 
-// PathError records an error and the operation and path that caused it.
-type PathError struct {
-	Op   string
-	Path string
-	Err  error
-}
-
-func (e *PathError) Error() string {
-	return fmt.Sprintf("%s %s: %v", e.Op, e.Path, e.Err)
-}
-
-func (e *PathError) Unwrap() error {
-	return e.Err
-}
-
 // wrapPathError wraps an error with operation and path information.
+// Uses fs.PathError to ensure compatibility with os.IsNotExist and other stdlib checks.
 func wrapPathError(op, path string, err error) error {
 	if err == nil {
 		return nil
 	}
 
 	// If it's already a PathError for the same path, don't double-wrap
-	var pe *PathError
+	var pe *fs.PathError
 	if errors.As(err, &pe) && pe.Path == path {
 		return err
 	}
 
-	return &PathError{
+	return &fs.PathError{
 		Op:   op,
 		Path: path,
 		Err:  err,

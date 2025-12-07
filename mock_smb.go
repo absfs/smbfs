@@ -360,6 +360,11 @@ func (sh *MockSMBShare) OpenFile(name string, flag int, perm fs.FileMode) (SMBFi
 		sh.backend.ensureParentDirs(name)
 	}
 
+	// Can't open a directory for writing
+	if data.isDir && (flag&(os.O_WRONLY|os.O_RDWR) != 0) {
+		return nil, errors.New("is a directory")
+	}
+
 	if trunc && !data.isDir {
 		data.content = []byte{}
 		data.modTime = time.Now()
@@ -684,6 +689,16 @@ func (f *MockSMBFile) Write(p []byte) (n int, err error) {
 
 	if f.data.isDir {
 		return 0, errors.New("is a directory")
+	}
+
+	// Special case: zero-length write at an offset truncates the file
+	if len(p) == 0 {
+		if f.offset < int64(len(f.data.content)) {
+			// Truncate to current offset
+			f.data.content = f.data.content[:f.offset]
+			f.data.modTime = time.Now()
+		}
+		return 0, nil
 	}
 
 	// Expand content if needed
