@@ -68,6 +68,37 @@ func setupTestFS(t *testing.T) *FileSystem {
 	return fsys
 }
 
+// setupBenchFS creates a test filesystem instance for benchmarks.
+func setupBenchFS(b *testing.B) *FileSystem {
+	b.Helper()
+
+	config := &Config{
+		Server:   getEnvOrDefault("SMB_SERVER", "localhost"),
+		Share:    getEnvOrDefault("SMB_SHARE", "testshare"),
+		Username: getEnvOrDefault("SMB_USERNAME", "testuser"),
+		Password: getEnvOrDefault("SMB_PASSWORD", "testpass123"),
+		Domain:   getEnvOrDefault("SMB_DOMAIN", "TESTGROUP"),
+	}
+
+	fsys, err := New(config)
+	if err != nil {
+		b.Fatalf("Failed to create filesystem: %v", err)
+	}
+
+	b.Cleanup(func() {
+		fsys.Close()
+	})
+
+	return fsys
+}
+
+func getEnvOrDefault(key, defaultValue string) string {
+	if value := os.Getenv(key); value != "" {
+		return value
+	}
+	return defaultValue
+}
+
 func TestIntegration_BasicConnection(t *testing.T) {
 	fsys := setupTestFS(t)
 

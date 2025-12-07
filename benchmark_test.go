@@ -14,7 +14,7 @@ import (
 
 // BenchmarkFileCreation measures file creation performance.
 func BenchmarkFileCreation(b *testing.B) {
-	fsys := setupTestFS(b.(*testing.T))
+	fsys := setupBenchFS(b)
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
@@ -32,7 +32,7 @@ func BenchmarkFileCreation(b *testing.B) {
 
 // BenchmarkSmallFileWrite measures writing small files (1KB).
 func BenchmarkSmallFileWrite(b *testing.B) {
-	fsys := setupTestFS(b.(*testing.T))
+	fsys := setupBenchFS(b)
 	data := bytes.Repeat([]byte("x"), 1024) // 1KB
 
 	b.ResetTimer()
@@ -59,7 +59,7 @@ func BenchmarkSmallFileWrite(b *testing.B) {
 
 // BenchmarkMediumFileWrite measures writing medium files (64KB).
 func BenchmarkMediumFileWrite(b *testing.B) {
-	fsys := setupTestFS(b.(*testing.T))
+	fsys := setupBenchFS(b)
 	data := bytes.Repeat([]byte("x"), 64*1024) // 64KB
 
 	b.ResetTimer()
@@ -86,7 +86,7 @@ func BenchmarkMediumFileWrite(b *testing.B) {
 
 // BenchmarkLargeFileWrite measures writing large files (1MB).
 func BenchmarkLargeFileWrite(b *testing.B) {
-	fsys := setupTestFS(b.(*testing.T))
+	fsys := setupBenchFS(b)
 	data := bytes.Repeat([]byte("x"), 1024*1024) // 1MB
 
 	b.ResetTimer()
@@ -113,7 +113,7 @@ func BenchmarkLargeFileWrite(b *testing.B) {
 
 // BenchmarkSmallFileRead measures reading small files (1KB).
 func BenchmarkSmallFileRead(b *testing.B) {
-	fsys := setupTestFS(b.(*testing.T))
+	fsys := setupBenchFS(b)
 	data := bytes.Repeat([]byte("x"), 1024) // 1KB
 	path := "/bench_read_small.txt"
 
@@ -140,7 +140,7 @@ func BenchmarkSmallFileRead(b *testing.B) {
 
 // BenchmarkMediumFileRead measures reading medium files (64KB).
 func BenchmarkMediumFileRead(b *testing.B) {
-	fsys := setupTestFS(b.(*testing.T))
+	fsys := setupBenchFS(b)
 	data := bytes.Repeat([]byte("x"), 64*1024) // 64KB
 	path := "/bench_read_medium.txt"
 
@@ -167,7 +167,7 @@ func BenchmarkMediumFileRead(b *testing.B) {
 
 // BenchmarkLargeFileRead measures reading large files (1MB).
 func BenchmarkLargeFileRead(b *testing.B) {
-	fsys := setupTestFS(b.(*testing.T))
+	fsys := setupBenchFS(b)
 	data := bytes.Repeat([]byte("x"), 1024*1024) // 1MB
 	path := "/bench_read_large.txt"
 
@@ -194,7 +194,7 @@ func BenchmarkLargeFileRead(b *testing.B) {
 
 // BenchmarkStat measures file stat performance.
 func BenchmarkStat(b *testing.B) {
-	fsys := setupTestFS(b.(*testing.T))
+	fsys := setupBenchFS(b)
 	path := "/bench_stat.txt"
 
 	// Setup: create test file
@@ -219,7 +219,7 @@ func BenchmarkStat(b *testing.B) {
 
 // BenchmarkReadDir measures directory reading performance.
 func BenchmarkReadDir(b *testing.B) {
-	fsys := setupTestFS(b.(*testing.T))
+	fsys := setupBenchFS(b)
 	dirPath := "/bench_readdir"
 
 	// Setup: create directory with 100 files
@@ -253,7 +253,7 @@ func BenchmarkReadDir(b *testing.B) {
 
 // BenchmarkMkdir measures directory creation performance.
 func BenchmarkMkdir(b *testing.B) {
-	fsys := setupTestFS(b.(*testing.T))
+	fsys := setupBenchFS(b)
 
 	b.ResetTimer()
 
@@ -271,7 +271,7 @@ func BenchmarkMkdir(b *testing.B) {
 
 // BenchmarkRename measures file rename performance.
 func BenchmarkRename(b *testing.B) {
-	fsys := setupTestFS(b.(*testing.T))
+	fsys := setupBenchFS(b)
 
 	b.ResetTimer()
 
@@ -299,7 +299,7 @@ func BenchmarkRename(b *testing.B) {
 
 // BenchmarkChmod measures chmod performance.
 func BenchmarkChmod(b *testing.B) {
-	fsys := setupTestFS(b.(*testing.T))
+	fsys := setupBenchFS(b)
 	path := "/bench_chmod.txt"
 
 	// Setup: create test file
@@ -323,7 +323,7 @@ func BenchmarkChmod(b *testing.B) {
 
 // BenchmarkChtimes measures chtimes performance.
 func BenchmarkChtimes(b *testing.B) {
-	fsys := setupTestFS(b.(*testing.T))
+	fsys := setupBenchFS(b)
 	path := "/bench_chtimes.txt"
 
 	// Setup: create test file
@@ -348,7 +348,7 @@ func BenchmarkChtimes(b *testing.B) {
 
 // BenchmarkSequentialRead measures sequential read performance.
 func BenchmarkSequentialRead(b *testing.B) {
-	fsys := setupTestFS(b.(*testing.T))
+	fsys := setupBenchFS(b)
 	data := bytes.Repeat([]byte("x"), 1024*1024) // 1MB
 	path := "/bench_sequential_read.bin"
 
@@ -390,7 +390,7 @@ func BenchmarkSequentialRead(b *testing.B) {
 
 // BenchmarkConnectionPooling measures connection pool efficiency.
 func BenchmarkConnectionPooling(b *testing.B) {
-	fsys := setupTestFS(b.(*testing.T))
+	fsys := setupBenchFS(b)
 
 	b.ResetTimer()
 	b.RunParallel(func(pb *testing.PB) {
