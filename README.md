@@ -1,5 +1,10 @@
 # smbfs
 
+[![Go Reference](https://pkg.go.dev/badge/github.com/absfs/smbfs.svg)](https://pkg.go.dev/github.com/absfs/smbfs)
+[![Go Report Card](https://goreportcard.com/badge/github.com/absfs/smbfs)](https://goreportcard.com/report/github.com/absfs/smbfs)
+[![CI](https://github.com/absfs/smbfs/actions/workflows/ci.yml/badge.svg)](https://github.com/absfs/smbfs/actions/workflows/ci.yml)
+[![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+
 SMB/CIFS network filesystem implementation for absfs - access Windows file shares and Samba servers through the absfs.FileSystem interface.
 
 **Project Status:** ✅ Production Ready | **Phase:** 4 of 5 (80% Complete) | **Stability:** Stable
