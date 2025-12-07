@@ -786,14 +786,14 @@ func TestFileSystem_CacheInvalidation(t *testing.T) {
 	backend.AddFile("/invalidate.txt", []byte("test"), 0644)
 
 	// Populate cache
-	fsys.Stat("/invalidate.txt")
+	_, _ = fsys.Stat("/invalidate.txt")
 
 	// Modify file (should invalidate cache)
-	fsys.Chmod("/invalidate.txt", 0755)
+	_ = fsys.Chmod("/invalidate.txt", 0755)
 
 	// Next stat should go to backend (cache invalidated)
 	backend.ClearOperations()
-	fsys.Stat("/invalidate.txt")
+	_, _ = fsys.Stat("/invalidate.txt")
 
 	ops := backend.GetOperations()
 	statFound := false

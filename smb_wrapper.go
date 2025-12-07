@@ -151,7 +151,7 @@ func (f *RealConnectionFactory) CreateConnection(config *Config) (SMBSession, SM
 	// Connect to share
 	share, err := session.Mount(config.Share)
 	if err != nil {
-		session.Logoff()
+		_ = session.Logoff()
 		netConn.Close()
 		return nil, nil, fmt.Errorf("failed to mount share %s: %w", config.Share, err)
 	}

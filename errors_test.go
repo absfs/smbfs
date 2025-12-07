@@ -8,7 +8,7 @@ import (
 
 func TestPathError(t *testing.T) {
 	baseErr := errors.New("base error")
-	pathErr := &PathError{
+	pathErr := &fs.PathError{
 		Op:   "open",
 		Path: "/path/to/file",
 		Err:  baseErr,
@@ -54,7 +54,7 @@ func TestWrapPathError(t *testing.T) {
 			name: "doesn't double-wrap same path",
 			op:   "read",
 			path: "/path/to/file",
-			err: &PathError{
+			err: &fs.PathError{
 				Op:   "open",
 				Path: "/path/to/file",
 				Err:  errors.New("base error"),
@@ -79,7 +79,7 @@ func TestWrapPathError(t *testing.T) {
 				t.Fatal("wrapPathError() = nil, want error")
 			}
 
-			var pathErr *PathError
+			var pathErr *fs.PathError
 			if !errors.As(result, &pathErr) {
 				t.Fatalf("wrapPathError() result is not a PathError: %T", result)
 			}
@@ -277,7 +277,7 @@ func TestPathError_ErrorChaining(t *testing.T) {
 	}
 
 	// PathError itself should be in the chain
-	var pathErr *PathError
+	var pathErr *fs.PathError
 	if !errors.As(wrappedErr, &pathErr) {
 		t.Error("errors.As() failed to find PathError in chain")
 	}

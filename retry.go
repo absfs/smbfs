@@ -82,22 +82,3 @@ func (fsys *FileSystem) withRetry(ctx context.Context, operation func() error) e
 
 	return lastErr
 }
-
-// withRetryOp is a helper for operations that return a value and an error.
-func withRetryOp[T any](fsys *FileSystem, ctx context.Context, operation func() (T, error)) (T, error) {
-	var result T
-	var lastErr error
-
-	err := fsys.withRetry(ctx, func() error {
-		var err error
-		result, err = operation()
-		lastErr = err
-		return err
-	})
-
-	if err != nil {
-		return result, lastErr
-	}
-
-	return result, nil
-}

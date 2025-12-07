@@ -38,7 +38,7 @@ func TestMetadataCache_DirEntries(t *testing.T) {
 
 	// Test expiration
 	time.Sleep(150 * time.Millisecond)
-	entries, ok = cache.getDirEntries("/test")
+	_, ok = cache.getDirEntries("/test")
 	if ok {
 		t.Error("Expected cache miss after expiration, got hit")
 	}
@@ -79,7 +79,7 @@ func TestMetadataCache_StatInfo(t *testing.T) {
 
 	// Test expiration
 	time.Sleep(150 * time.Millisecond)
-	info, ok = cache.getStatInfo("/test.txt")
+	_, ok = cache.getStatInfo("/test.txt")
 	if ok {
 		t.Error("Expected cache miss after expiration, got hit")
 	}
