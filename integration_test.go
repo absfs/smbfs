@@ -9,6 +9,7 @@ import (
 	"io"
 	"io/fs"
 	"os"
+	"strconv"
 	"testing"
 	"time"
 )
@@ -20,6 +21,13 @@ func getTestConfig(t *testing.T) *Config {
 	server := os.Getenv("SMB_SERVER")
 	if server == "" {
 		server = "localhost"
+	}
+
+	port := 445
+	if portStr := os.Getenv("SMB_PORT"); portStr != "" {
+		if p, err := strconv.Atoi(portStr); err == nil {
+			port = p
+		}
 	}
 
 	share := os.Getenv("SMB_SHARE")
@@ -44,6 +52,7 @@ func getTestConfig(t *testing.T) *Config {
 
 	return &Config{
 		Server:   server,
+		Port:     port,
 		Share:    share,
 		Username: username,
 		Password: password,
