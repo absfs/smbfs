@@ -2,6 +2,7 @@ package smbfs
 
 import (
 	"context"
+	"io"
 	"io/fs"
 	"os"
 	"time"
@@ -52,7 +53,7 @@ func New(config *Config) (*FileSystem, error) {
 }
 
 // Open opens a file for reading.
-func (fsys *FileSystem) Open(name string) (fs.File, error) {
+func (fsys *FileSystem) Open(name string) (absfs.File, error) {
 	return fsys.OpenFile(name, os.O_RDONLY, 0)
 }
 
@@ -514,14 +515,53 @@ func (fsys *FileSystem) Getwd() (string, error) {
 	return "/", nil
 }
 
-// Separator returns the path separator for this filesystem.
-func (fsys *FileSystem) Separator() uint8 {
-	return '/'
+// ReadFile reads the named file and returns its contents.
+func (fsys *FileSystem) ReadFile(name string) ([]byte, error) {
+	if err := validatePath(name); err != nil {
+		return nil, wrapPathError("readfile", name, err)
+	}
+
+	name = fsys.pathNorm.normalize(name)
+
+	f, err := fsys.Open(name)
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+
+	// Get file size for efficient buffer allocation
+	info, err := f.Stat()
+	if err != nil {
+		return nil, wrapPathError("readfile", name, err)
+	}
+
+	if info.IsDir() {
+		return nil, wrapPathError("readfile", name, ErrNotDirectory)
+	}
+
+	// Allocate buffer based on file size
+	size := info.Size()
+	buf := make([]byte, size)
+
+	// Read entire file
+	n, err := io.ReadFull(f.(*File), buf)
+	if err != nil && err != io.EOF && err != io.ErrUnexpectedEOF {
+		return nil, wrapPathError("readfile", name, err)
+	}
+
+	return buf[:n], nil
 }
 
-// ListSeparator returns the list separator for this filesystem.
-func (fsys *FileSystem) ListSeparator() uint8 {
-	return ':'
+// Sub returns an fs.FS corresponding to the subtree rooted at dir.
+func (fsys *FileSystem) Sub(dir string) (fs.FS, error) {
+	if err := validatePath(dir); err != nil {
+		return nil, wrapPathError("sub", dir, err)
+	}
+
+	dir = fsys.pathNorm.normalize(dir)
+
+	// Use absfs.FilerToFS to create a read-only fs.FS
+	return absfs.FilerToFS(fsys, dir)
 }
 
 // NewWithFactory creates a new SMB filesystem with a custom connection factory.
@@ -552,4 +592,81 @@ func NewWithFactory(config *Config, factory ConnectionFactory) (*FileSystem, err
 	fs.pool.startCleanup(ctx)
 
 	return fs, nil
+}
+
+// subFS represents a sub-filesystem rooted at a specific directory.
+type subFS struct {
+	parent *FileSystem
+	root   string
+}
+
+// Ensure subFS implements absfs.Filer.
+var _ absfs.Filer = (*subFS)(nil)
+
+// joinPath joins the root path with the given path.
+func (sub *subFS) joinPath(name string) string {
+	if err := validatePath(name); err != nil {
+		return name
+	}
+	// Normalize the name and join with root
+	name = sub.parent.pathNorm.normalize(name)
+	return sub.parent.pathNorm.join(sub.root, name)
+}
+
+// OpenFile opens a file within the sub-filesystem.
+func (sub *subFS) OpenFile(name string, flag int, perm fs.FileMode) (absfs.File, error) {
+	return sub.parent.OpenFile(sub.joinPath(name), flag, perm)
+}
+
+// Mkdir creates a directory within the sub-filesystem.
+func (sub *subFS) Mkdir(name string, perm fs.FileMode) error {
+	return sub.parent.Mkdir(sub.joinPath(name), perm)
+}
+
+// Remove removes a file or directory within the sub-filesystem.
+func (sub *subFS) Remove(name string) error {
+	return sub.parent.Remove(sub.joinPath(name))
+}
+
+// Rename renames a file within the sub-filesystem.
+func (sub *subFS) Rename(oldpath, newpath string) error {
+	return sub.parent.Rename(sub.joinPath(oldpath), sub.joinPath(newpath))
+}
+
+// Stat returns file information for a file within the sub-filesystem.
+func (sub *subFS) Stat(name string) (fs.FileInfo, error) {
+	return sub.parent.Stat(sub.joinPath(name))
+}
+
+// Chmod changes the mode of a file within the sub-filesystem.
+func (sub *subFS) Chmod(name string, mode fs.FileMode) error {
+	return sub.parent.Chmod(sub.joinPath(name), mode)
+}
+
+// Chtimes changes the access and modification times of a file within the sub-filesystem.
+func (sub *subFS) Chtimes(name string, atime time.Time, mtime time.Time) error {
+	return sub.parent.Chtimes(sub.joinPath(name), atime, mtime)
+}
+
+// Chown changes the owner of a file within the sub-filesystem.
+func (sub *subFS) Chown(name string, uid, gid int) error {
+	return sub.parent.Chown(sub.joinPath(name), uid, gid)
+}
+
+// ReadDir reads a directory within the sub-filesystem.
+func (sub *subFS) ReadDir(name string) ([]fs.DirEntry, error) {
+	return sub.parent.ReadDir(sub.joinPath(name))
+}
+
+// ReadFile reads a file within the sub-filesystem.
+func (sub *subFS) ReadFile(name string) ([]byte, error) {
+	return sub.parent.ReadFile(sub.joinPath(name))
+}
+
+// Sub returns a sub-filesystem of this sub-filesystem.
+func (sub *subFS) Sub(dir string) (fs.FS, error) {
+	fullPath := sub.joinPath(dir)
+
+	// Use absfs.FilerToFS to create a read-only fs.FS
+	return absfs.FilerToFS(sub.parent, fullPath)
 }

@@ -2,7 +2,6 @@ package main
 
 import (
 	"fmt"
-	"io/fs"
 	"log"
 	"os"
 
@@ -43,7 +42,7 @@ func main() {
 
 	// Example 2: Read a file
 	fmt.Println("\nReading a file:")
-	data, err := fs.ReadFile(fsys, "/README.txt")
+	data, err := fsys.ReadFile("/README.txt")
 	if err != nil {
 		// File might not exist, that's okay for this example
 		fmt.Printf("Could not read file: %v\n", err)

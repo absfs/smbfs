@@ -184,43 +184,7 @@ func TestConvertFlags(t *testing.T) {
 	}
 }
 
-func TestFileSystem_Separator(t *testing.T) {
-	config := &Config{
-		Server:   "server.example.com",
-		Share:    "myshare",
-		Username: "user",
-		Password: "pass",
-	}
-
-	fsys, err := New(config)
-	if err != nil {
-		t.Fatalf("New() unexpected error = %v", err)
-	}
-	defer fsys.Close()
-
-	if sep := fsys.Separator(); sep != '/' {
-		t.Errorf("Separator() = %c, want %c", sep, '/')
-	}
-}
-
-func TestFileSystem_ListSeparator(t *testing.T) {
-	config := &Config{
-		Server:   "server.example.com",
-		Share:    "myshare",
-		Username: "user",
-		Password: "pass",
-	}
-
-	fsys, err := New(config)
-	if err != nil {
-		t.Fatalf("New() unexpected error = %v", err)
-	}
-	defer fsys.Close()
-
-	if sep := fsys.ListSeparator(); sep != ':' {
-		t.Errorf("ListSeparator() = %c, want %c", sep, ':')
-	}
-}
+// Separator and ListSeparator tests removed as these methods are no longer part of absfs 1.0
 
 func TestFileSystem_PathValidation(t *testing.T) {
 	config := &Config{

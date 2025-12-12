@@ -17,6 +17,11 @@ type File struct {
 	dirPos   int
 }
 
+// Name returns the name of the file.
+func (f *File) Name() string {
+	return f.path
+}
+
 // Read reads up to len(p) bytes into p.
 func (f *File) Read(p []byte) (n int, err error) {
 	if f.file == nil {
@@ -155,6 +160,125 @@ func (f *File) Truncate(size int64) error {
 	}
 
 	return nil
+}
+
+// ReadAt reads len(b) bytes from the File starting at byte offset off.
+func (f *File) ReadAt(b []byte, off int64) (n int, err error) {
+	if f.file == nil {
+		return 0, fs.ErrClosed
+	}
+
+	// Save current position
+	currentPos := f.offset
+
+	// Seek to the offset
+	_, err = f.file.Seek(off, io.SeekStart)
+	if err != nil {
+		return 0, wrapPathError("readat", f.path, err)
+	}
+
+	// Read the data
+	n, err = f.file.Read(b)
+
+	// Restore original position
+	_, seekErr := f.file.Seek(currentPos, io.SeekStart)
+	if seekErr != nil && err == nil {
+		err = wrapPathError("readat", f.path, seekErr)
+	}
+
+	if err != nil && err != io.EOF {
+		return n, wrapPathError("readat", f.path, err)
+	}
+
+	return n, err
+}
+
+// WriteAt writes len(b) bytes to the File starting at byte offset off.
+func (f *File) WriteAt(b []byte, off int64) (n int, err error) {
+	if f.file == nil {
+		return 0, fs.ErrClosed
+	}
+
+	// Save current position
+	currentPos := f.offset
+
+	// Seek to the offset
+	_, err = f.file.Seek(off, io.SeekStart)
+	if err != nil {
+		return 0, wrapPathError("writeat", f.path, err)
+	}
+
+	// Write the data
+	n, err = f.file.Write(b)
+
+	// Restore original position
+	_, seekErr := f.file.Seek(currentPos, io.SeekStart)
+	if seekErr != nil && err == nil {
+		err = wrapPathError("writeat", f.path, seekErr)
+	}
+
+	if err != nil {
+		return n, wrapPathError("writeat", f.path, err)
+	}
+
+	return n, nil
+}
+
+// WriteString writes a string to the file.
+func (f *File) WriteString(s string) (n int, err error) {
+	return f.Write([]byte(s))
+}
+
+// Sync commits the current contents of the file to stable storage.
+func (f *File) Sync() error {
+	if f.file == nil {
+		return fs.ErrClosed
+	}
+	// SMB doesn't have an explicit sync operation in the go-smb2 library
+	// The writes are typically synchronous
+	return nil
+}
+
+// Readdir reads directory information.
+func (f *File) Readdir(n int) ([]fs.FileInfo, error) {
+	if f.file == nil {
+		return nil, fs.ErrClosed
+	}
+
+	entries, err := f.ReadDir(n)
+	if err != nil {
+		return nil, err
+	}
+
+	infos := make([]fs.FileInfo, len(entries))
+	for i, entry := range entries {
+		info, err := entry.Info()
+		if err != nil {
+			return nil, wrapPathError("readdir", f.path, err)
+		}
+		infos[i] = info
+	}
+
+	return infos, nil
+}
+
+// Readdirnames reads directory names.
+func (f *File) Readdirnames(n int) ([]string, error) {
+	if f.file == nil {
+		return nil, fs.ErrClosed
+	}
+
+	entries, err := f.ReadDir(n)
+	if err != nil {
+		return nil, err
+	}
+
+	names := make([]string, len(entries))
+	for i, entry := range entries {
+		names[i] = entry.Name()
+	}
+
+	return names, nil
 }
 
 // ReadDir reads the contents of the directory.

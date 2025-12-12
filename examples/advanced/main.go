@@ -2,7 +2,6 @@ package main
 
 import (
 	"fmt"
-	"io/fs"
 	"log"
 	"os"
 	"time"
@@ -120,7 +119,7 @@ func main() {
 	// This will retry automatically if there are connection issues
 	for i := 1; i <= 3; i++ {
 		logger.Printf("\nAttempt %d: Reading file", i)
-		data, err := fs.ReadFile(fsys, "/test/demo.txt")
+		data, err := fsys.ReadFile("/test/demo.txt")
 		if err != nil {
 			logger.Printf("  Error: %v (will retry if retryable)", err)
 		} else {

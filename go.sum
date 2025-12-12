@@ -1,7 +1,5 @@
-github.com/absfs/absfs v0.0.0-20251109181304-77e2f9ac4448 h1:uN3Q47kmtV6TIGHZbrCbCf68jWmYDWyTcqq5JuoyON4=
-github.com/absfs/absfs v0.0.0-20251109181304-77e2f9ac4448/go.mod h1:IvFD36FQcMxLLZNhs2Lms+Uosc0G3AJ2JHOJIz8E5d8=
-github.com/absfs/fstesting v0.0.0-20251206231118-7a50ca2cce8a h1:XDf6hhmXiLj7WjXm0+6P5EM7TYV19cxFye0CJncyhzw=
-github.com/absfs/fstesting v0.0.0-20251206231118-7a50ca2cce8a/go.mod h1:k+GNl+VG/teXQBkCH5vt+gzPtkDCQTjX+hTgpDnnqEs=
+github.com/absfs/osfs v0.1.0-fastwalk h1:dEHAusiK/K8ROQgohL25q+cyqbiMXzSt1pgR3nbhNEg=
+github.com/absfs/osfs v0.1.0-fastwalk/go.mod h1:IIzwVILCbb3j0VHjcAQ7Xwpdz1h57eUzZil7DCIel/c=
 github.com/geoffgarside/ber v1.1.0 h1:qTmFG4jJbwiSzSXoNJeHcOprVzZ8Ulde2Rrrifu5U9w=
 github.com/geoffgarside/ber v1.1.0/go.mod h1:jVPKeCbj6MvQZhwLYsGwaGI52oUorHoHKNecGT85ZCc=
 github.com/hirochachacha/go-smb2 v1.1.0 h1:b6hs9qKIql9eVXAiN0M2wSFY5xnhbHAQoCwRKbaRTZI=
