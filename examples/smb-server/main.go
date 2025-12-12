@@ -22,6 +22,7 @@ func main() {
 	readOnly := flag.Bool("readonly", false, "Export share as read-only")
 	debug := flag.Bool("debug", false, "Enable debug logging")
 	smb2Only := flag.Bool("smb2", false, "Limit to SMB 2.x (disable SMB 3.1.1)")
+	noSign := flag.Bool("nosign", false, "Disable signing requirement")
 
 	flag.Usage = func() {
 		fmt.Fprintf(os.Stderr, "SMB Server Example - Serve an in-memory filesystem via SMB\n\n")
@@ -67,7 +68,7 @@ func main() {
 		Debug:           *debug,
 		ServerName:      "SMBSERVER",
 		AllowGuest:      true, // Allow guest access
-		SigningRequired: true, // Required for Windows 11 24H2 compatibility
+		SigningRequired: !*noSign, // Required for Windows 11 24H2 compatibility
 		// Add a test user for Windows clients that don't support guest
 		Users: map[string]string{
 			"testuser": "testpass",

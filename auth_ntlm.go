@@ -73,6 +73,12 @@ func NewNTLMAuthenticator(targetName string, users map[string]string, allowGuest
 // Authenticate processes NTLM authentication messages
 func (a *NTLMAuthenticator) Authenticate(securityBlob []byte) (*AuthResult, error) {
 	log.Printf("[DEBUG] Authenticate called: state=%d, blobLen=%d", a.state, len(securityBlob))
+	// Hex dump incoming blob
+	dumpLen := len(securityBlob)
+	if dumpLen > 64 {
+		dumpLen = 64
+	}
+	log.Printf("[DEBUG] Incoming security blob (first %d): %x", dumpLen, securityBlob[:dumpLen])
 
 	// Check for SPNEGO wrapper (GSS-API/GSSAPI)
 	ntlmBlob := a.extractNTLMFromSPNEGO(securityBlob)
@@ -102,7 +108,7 @@ func (a *NTLMAuthenticator) Authenticate(securityBlob []byte) (*AuthResult, erro
 	log.Printf("[DEBUG] NTLM message type: %d (1=Negotiate, 2=Challenge, 3=Authenticate)", msgType)
 
 	// Show first 32 bytes of blob for debugging
-	dumpLen := 32
+	dumpLen = 32
 	if len(ntlmBlob) < dumpLen {
 		dumpLen = len(ntlmBlob)
 	}
@@ -150,7 +156,13 @@ func (a *NTLMAuthenticator) handleNegotiate(blob []byte) (*AuthResult, error) {
 		challengeLen = 64
 	}
 	log.Printf("[DEBUG] NTLM Challenge hex (first 64 bytes): %x", challenge[:challengeLen])
-	log.Printf("[DEBUG] Response size=%d (raw NTLM, no SPNEGO)", len(responseBlob))
+	log.Printf("[DEBUG] SPNEGO response size=%d bytes", len(responseBlob))
+	// Hex dump first 80 bytes of SPNEGO wrapper
+	dumpLen := len(responseBlob)
+	if dumpLen > 80 {
+		dumpLen = 80
+	}
+	log.Printf("[DEBUG] SPNEGO hex (first %d): %x", dumpLen, responseBlob[:dumpLen])
 
 	return &AuthResult{
 		Success:      false, // More processing required
@@ -576,15 +588,24 @@ const (
 )
 
 // buildTargetInfo builds the AV_PAIR list for target info
+// Order follows fuse-t/go-smb2 reference implementation which works with Windows
 func (a *NTLMAuthenticator) buildTargetInfo() []byte {
 	var buf bytes.Buffer
 
-	domainUTF16 := EncodeStringToUTF16LE(a.targetName)
+	nbName := a.targetName
+	nbDomain := a.targetName
+	// For DNS names, use lowercase with .local suffix (common for non-domain machines)
+	dnsName := strings.ToLower(a.targetName) + ".local"
+	dnsDomain := "local"
 
-	// MsvAvNbDomainName (NetBIOS domain name) - Required
-	a.writeAVPair(&buf, avIDMsvAvNbDomainName, domainUTF16)
-	// MsvAvNbComputerName (NetBIOS computer name) - Required
-	a.writeAVPair(&buf, avIDMsvAvNbComputerName, domainUTF16)
+	// MsvAvNbDomainName (NetBIOS domain name)
+	a.writeAVPair(&buf, avIDMsvAvNbDomainName, EncodeStringToUTF16LE(nbDomain))
+	// MsvAvNbComputerName (NetBIOS computer name)
+	a.writeAVPair(&buf, avIDMsvAvNbComputerName, EncodeStringToUTF16LE(nbName))
+	// MsvAvDnsDomainName (DNS domain name) - Required by Windows 11 24H2
+	a.writeAVPair(&buf, avIDMsvAvDnsDomainName, EncodeStringToUTF16LE(dnsDomain))
+	// MsvAvDnsComputerName (DNS computer name) - Required by Windows 11 24H2
+	a.writeAVPair(&buf, avIDMsvAvDnsComputerName, EncodeStringToUTF16LE(dnsName))
 
 	// MsvAvTimestamp - REQUIRED for NTLMv2 MIC verification on modern Windows
 	// This is a FILETIME (100-nanosecond intervals since January 1, 1601)

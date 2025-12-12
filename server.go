@@ -39,13 +39,14 @@ type Server struct {
 
 // connState tracks state for each connection
 type connState struct {
-	conn            net.Conn
-	session         *Session
-	lastActive      time.Time
-	remoteAddr      string
-	dialect         SMBDialect // Negotiated dialect
-	signingRequired bool       // Whether signing is required for this connection
-	preauthHash     []byte     // SMB 3.1.1 preauth integrity hash (for key derivation)
+	conn                       net.Conn
+	session                    *Session
+	lastActive                 time.Time
+	remoteAddr                 string
+	dialect                    SMBDialect // Negotiated dialect
+	signingRequired            bool       // Whether signing is required for this connection
+	preauthHash                []byte     // SMB 3.1.1 preauth integrity hash (for key derivation)
+	clientSigningAlgorithms    []uint16   // Client's supported signing algorithms (from negotiate context)
 }
 
 // NewServer creates a new SMB server

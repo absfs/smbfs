@@ -1,5 +1,9 @@
 package smbfs
 
+import (
+	"crypto/rand"
+)
+
 // handleNegotiateImpl handles the SMB2 NEGOTIATE request
 // This is the first message in the SMB2 protocol handshake where the client
 // and server agree on the SMB dialect version to use.
@@ -38,7 +42,7 @@ func (h *SMBHandler) handleNegotiateImpl(state *connState, msg *SMB2Message) ([]
 	// Handle SMB1 client upgrade
 	// If payload is empty, this is from handleSMB1Negotiate
 	if len(msg.Payload) == 0 {
-		return h.buildNegotiateResponse(opts.MaxDialect, [16]byte{}, 0, 0), STATUS_SUCCESS
+		return h.buildNegotiateResponse(opts.MaxDialect, [16]byte{}, 0, 0, nil), STATUS_SUCCESS
 	}
 
 	// Parse request
@@ -106,8 +110,11 @@ func (h *SMBHandler) handleNegotiateImpl(state *connState, msg *SMB2Message) ([]
 	clientSigningRequired := clientSecurityMode&0x02 != 0
 	serverSigningRequired := h.server.options.SigningRequired
 
-	// Signing is required if either client or server requires it
-	state.signingRequired = clientSigningRequired || serverSigningRequired
+	// NOTE: For compatibility with Windows 11 24H2, we do NOT enforce server-required signing
+	// at NEGOTIATE time. Instead, we only honor client-requested signing.
+	// The session will still require signing if the client negotiated it (via NTLM).
+	// At SESSION_SETUP, if a session key is negotiated, signing will be enabled.
+	state.signingRequired = clientSigningRequired
 
 	h.server.logger.Debug("NEGOTIATE: Signing - client required=%v, server required=%v, negotiated required=%v",
 		clientSigningRequired, serverSigningRequired, state.signingRequired)
@@ -119,10 +126,12 @@ func (h *SMBHandler) handleNegotiateImpl(state *connState, msg *SMB2Message) ([]
 	// For SMB 3.1.1, parse and log client negotiate contexts
 	if selectedDialect >= SMB3_1_1 && negContextCount > 0 {
 		h.parseClientNegotiateContexts(msg.RawBytes, negContextOffset, negContextCount)
+		// Extract client's supported signing algorithms for use in response
+		state.clientSigningAlgorithms = h.extractClientSigningAlgorithms(msg.RawBytes, negContextOffset, negContextCount)
 	}
 
 	// Build and return response
-	return h.buildNegotiateResponse(selectedDialect, clientGUID, negContextOffset, negContextCount), STATUS_SUCCESS
+	return h.buildNegotiateResponse(selectedDialect, clientGUID, negContextOffset, negContextCount, state.clientSigningAlgorithms), STATUS_SUCCESS
 }
 
 // selectDialect chooses the highest common dialect between client and server
@@ -171,7 +180,7 @@ const (
 )
 
 // buildNegotiateResponse constructs the SMB2 NEGOTIATE response
-func (h *SMBHandler) buildNegotiateResponse(dialect SMBDialect, clientGUID [16]byte, negContextOffset uint32, negContextCount uint16) []byte {
+func (h *SMBHandler) buildNegotiateResponse(dialect SMBDialect, clientGUID [16]byte, negContextOffset uint32, negContextCount uint16, clientSigningAlgorithms []uint16) []byte {
 	opts := h.server.options
 
 	// Determine security mode
@@ -211,7 +220,7 @@ func (h *SMBHandler) buildNegotiateResponse(dialect SMBDialect, clientGUID [16]b
 	var negotiateContexts []byte
 	var contextCount uint16
 	if dialect >= SMB3_1_1 {
-		negotiateContexts, contextCount = h.buildNegotiateContexts()
+		negotiateContexts, contextCount = h.buildNegotiateContexts(clientSigningAlgorithms)
 	}
 
 	// Build response
@@ -259,7 +268,8 @@ func (h *SMBHandler) buildNegotiateResponse(dialect SMBDialect, clientGUID [16]b
 }
 
 // buildNegotiateContexts builds the SMB 3.1.1 negotiate contexts
-func (h *SMBHandler) buildNegotiateContexts() ([]byte, uint16) {
+// clientSigningAlgorithms provides the client's supported signing algorithms (if available)
+func (h *SMBHandler) buildNegotiateContexts(clientSigningAlgorithms []uint16) ([]byte, uint16) {
 	w := NewByteWriter(64)
 
 	// Context 1: SMB2_PREAUTH_INTEGRITY_CAPABILITIES
@@ -291,7 +301,7 @@ func (h *SMBHandler) buildNegotiateContexts() ([]byte, uint16) {
 
 	// Context 3: SMB2_SIGNING_CAPABILITIES (required by Windows 11 24H2)
 	w.WriteUint16(SMB2_SIGNING_CAPABILITIES) // ContextType
-	signData := h.buildSigningCapabilitiesContext()
+	signData := h.buildSigningCapabilitiesContext(clientSigningAlgorithms)
 	w.WriteUint16(uint16(len(signData))) // DataLength
 	w.WriteUint32(0)                     // Reserved
 	w.WriteBytes(signData)
@@ -315,9 +325,12 @@ func (h *SMBHandler) buildPreauthIntegrityContext() []byte {
 
 	// Salt (variable): Random salt
 	salt := make([]byte, saltLength)
-	// Use a fixed salt for now (in production, use crypto/rand)
-	for i := range salt {
-		salt[i] = byte(i)
+	// Use crypto/rand for random salt
+	if _, err := rand.Read(salt); err != nil {
+		// Fallback to sequential salt if rand fails
+		for i := range salt {
+			salt[i] = byte(i)
+		}
 	}
 	w.WriteBytes(salt)
 
@@ -347,16 +360,72 @@ const (
 
 // buildSigningCapabilitiesContext builds the signing capabilities context
 // Per MS-SMB2, server responds with exactly 1 signing algorithm
-func (h *SMBHandler) buildSigningCapabilitiesContext() []byte {
+// clientSigningAlgorithms provides algorithms the client supports (for selection)
+func (h *SMBHandler) buildSigningCapabilitiesContext(clientSigningAlgorithms []uint16) []byte {
 	w := NewByteWriter(4)
+
+	// Determine which algorithm to send to client
+	// NOTE: We currently only support AES-CMAC (0x0001) for actual signing
+	// Always use AES-CMAC regardless of what client requests, since it's the only one we implement
+	selectedAlgorithm := SMB2_SIGNING_AES_CMAC
+
+	if len(clientSigningAlgorithms) > 0 {
+		// Log what the client supports
+		h.server.logger.Debug("NEGOTIATE: Client supports algorithms: %v", clientSigningAlgorithms)
+	}
+
+	h.server.logger.Debug("NEGOTIATE: Selected signing algorithm 0x%04x (AES-CMAC - only supported)", selectedAlgorithm)
 
 	// SigningAlgorithmCount (2): Server responds with exactly 1 selected algorithm
 	w.WriteUint16(1)
 
-	// SigningAlgorithms (2 * count): AES-CMAC (required for SMB 3.1.1)
-	w.WriteUint16(SMB2_SIGNING_AES_CMAC)
+	// SigningAlgorithms (2 * count): The selected algorithm
+	w.WriteUint16(selectedAlgorithm)
 
 	return w.Bytes()
+}
+
+// extractClientSigningAlgorithms extracts the client's supported signing algorithms from negotiate contexts
+func (h *SMBHandler) extractClientSigningAlgorithms(rawBytes []byte, offset uint32, count uint16) []uint16 {
+	// Offset is from start of SMB2 header
+	startOffset := int(offset)
+	if len(rawBytes) > 4 && rawBytes[4] == 0xFE && rawBytes[5] == 'S' {
+		// NetBIOS header present
+		startOffset += 4
+	}
+
+	if startOffset >= len(rawBytes) {
+		return nil
+	}
+
+	pos := startOffset
+	for i := uint16(0); i < count && pos+8 <= len(rawBytes); i++ {
+		contextType := uint16(rawBytes[pos]) | uint16(rawBytes[pos+1])<<8
+		dataLen := uint16(rawBytes[pos+2]) | uint16(rawBytes[pos+3])<<8
+		dataStart := pos + 8
+
+		if contextType == 0x0008 { // SIGNING_CAPABILITIES
+			if dataStart+int(dataLen) <= len(rawBytes) {
+				algCount := uint16(rawBytes[dataStart]) | uint16(rawBytes[dataStart+1])<<8
+				algs := make([]uint16, algCount)
+				for j := uint16(0); j < algCount && dataStart+2+int(j*2)+1 < len(rawBytes); j++ {
+					offset := dataStart + 2 + int(j*2)
+					algs[j] = uint16(rawBytes[offset]) | uint16(rawBytes[offset+1])<<8
+				}
+				h.server.logger.Debug("NEGOTIATE: Client signing algorithms: %v", algs)
+				return algs
+			}
+		}
+
+		// Move to next context (8 byte header + data + padding to 8-byte boundary)
+		pos += 8 + int(dataLen)
+		// Align to 8-byte boundary
+		if pos%8 != 0 {
+			pos += 8 - (pos % 8)
+		}
+	}
+
+	return nil
 }
 
 // parseClientNegotiateContexts parses and logs client negotiate contexts for debugging
