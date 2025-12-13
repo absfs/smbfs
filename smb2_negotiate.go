@@ -388,11 +388,8 @@ func (h *SMBHandler) buildSigningCapabilitiesContext(clientSigningAlgorithms []u
 // extractClientSigningAlgorithms extracts the client's supported signing algorithms from negotiate contexts
 func (h *SMBHandler) extractClientSigningAlgorithms(rawBytes []byte, offset uint32, count uint16) []uint16 {
 	// Offset is from start of SMB2 header
+	// rawBytes is the SMB2 message ONLY (no NetBIOS header)
 	startOffset := int(offset)
-	if len(rawBytes) > 4 && rawBytes[4] == 0xFE && rawBytes[5] == 'S' {
-		// NetBIOS header present
-		startOffset += 4
-	}
 
 	if startOffset >= len(rawBytes) {
 		return nil
@@ -431,16 +428,11 @@ func (h *SMBHandler) extractClientSigningAlgorithms(rawBytes []byte, offset uint
 // parseClientNegotiateContexts parses and logs client negotiate contexts for debugging
 func (h *SMBHandler) parseClientNegotiateContexts(rawBytes []byte, offset uint32, count uint16) {
 	// Offset is from start of SMB2 header in the raw message
-	// rawBytes includes NetBIOS header (4 bytes) + SMB2 header (64 bytes) + payload
-	// So we need to offset by 4 (NetBIOS) to get to SMB2 header start
+	// rawBytes is the SMB2 message ONLY (no NetBIOS header)
+	// The offset is from the start of the SMB2 header
 
 	// The offset is from the start of the SMB2 header
-	// Skip NetBIOS header (4 bytes) if present
 	startOffset := int(offset)
-	if len(rawBytes) > 4 && rawBytes[4] == 0xFE && rawBytes[5] == 'S' {
-		// NetBIOS header present
-		startOffset += 4
-	}
 
 	if startOffset >= len(rawBytes) {
 		h.server.logger.Debug("NEGOTIATE: Context offset %d beyond message length %d", startOffset, len(rawBytes))
