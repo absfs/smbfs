@@ -21,9 +21,28 @@ func NewSMBHandler(server *Server) *SMBHandler {
 func (h *SMBHandler) HandleMessage(state *connState, msg *SMB2Message) (*SMB2Message, error) {
 	header := msg.Header
 	cmd := header.Command
+	opStart := time.Now()
 
 	h.server.logger.Debug("Received %s (MsgID: %d, SessID: %d, TreeID: %d)",
 		CommandName(cmd), header.MessageID, header.SessionID, header.TreeID)
+
+	// Rate limiting check
+	if !h.server.rateLimiter.Allow(state.remoteAddr, state.remoteAddr) {
+		h.server.metrics.RecordRateLimited()
+		h.server.logger.Warn("Rate limited: %s cmd=%s", state.remoteAddr, CommandName(cmd))
+		respHeader := &SMB2Header{
+			StructureSize: SMB2HeaderSize,
+			Command:       cmd,
+			Flags:         SMB2_FLAGS_SERVER_TO_REDIR,
+			MessageID:     header.MessageID,
+			SessionID:     header.SessionID,
+			TreeID:        header.TreeID,
+			Status:        STATUS_INSUFFICIENT_RESOURCES,
+			CreditRequest: 1,
+		}
+		copy(respHeader.ProtocolID[:], SMB2ProtocolID)
+		return &SMB2Message{Header: respHeader, Payload: h.buildErrorResponse()}, nil
+	}
 
 	// Calculate credits to grant (be generous to avoid client stalls)
 	creditsToGrant := header.CreditRequest
@@ -100,8 +119,17 @@ func (h *SMBHandler) HandleMessage(state *connState, msg *SMB2Message) (*SMB2Mes
 		// CANCEL doesn't get a response
 		return nil, nil
 
+	case SMB2_LOCK:
+		payload, status = h.handleLock(state, msg)
+
 	case SMB2_IOCTL:
 		payload, status = h.handleIOCTL(state, msg)
+
+	case SMB2_CHANGE_NOTIFY:
+		payload, status = h.handleChangeNotify(state, msg)
+
+	case SMB2_OPLOCK_BREAK:
+		payload, status = h.handleOplockBreak(state, msg)
 
 	default:
 		h.server.logger.Warn("Unsupported command: %s (0x%04x)", CommandName(cmd), cmd)
@@ -150,6 +178,9 @@ func (h *SMBHandler) HandleMessage(state *connState, msg *SMB2Message) (*SMB2Mes
 
 	h.server.logger.Debug("Responding %s status=%s (%d bytes, signed=%v)",
 		CommandName(cmd), status.String(), len(payload), shouldSign)
+
+	// Record metrics
+	h.server.metrics.RecordOp(CommandName(cmd), time.Since(opStart), status.IsError())
 
 	return response, nil
 }

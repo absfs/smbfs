@@ -1,6 +1,7 @@
 package smbfs
 
 import (
+	"crypto/rand"
 	"encoding/binary"
 	"unicode/utf16"
 )
@@ -228,9 +229,7 @@ func (w *ByteWriter) WriteUTF16String(s string) {
 
 // WriteZeros appends n zero bytes
 func (w *ByteWriter) WriteZeros(n int) {
-	for i := 0; i < n; i++ {
-		w.data = append(w.data, 0)
-	}
+	w.data = append(w.data, make([]byte, n)...)
 }
 
 // WritePadTo8 pads to 8-byte boundary
@@ -255,12 +254,13 @@ func (w *ByteWriter) SetUint32At(pos int, v uint32) {
 
 // GUID utilities
 
-// NewGUID creates a new random GUID
+// NewGUID creates a new random GUID using crypto/rand
 func NewGUID() [16]byte {
-	// Use crypto/rand for proper randomness in production
-	// For now, this is a placeholder that should be replaced
 	var guid [16]byte
-	// TODO: Use crypto/rand to generate proper GUID
+	_, _ = rand.Read(guid[:])
+	// Set version 4 (random) UUID bits per RFC 4122
+	guid[6] = (guid[6] & 0x0f) | 0x40 // Version 4
+	guid[8] = (guid[8] & 0x3f) | 0x80 // Variant 1
 	return guid
 }
 

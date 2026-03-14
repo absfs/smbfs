@@ -100,6 +100,7 @@ func (h *SMBHandler) handleNegotiateImpl(state *connState, msg *SMB2Message) ([]
 	// Store negotiation state
 	state.session = nil // Clear any previous session
 	state.dialect = selectedDialect
+	state.clientGUID = clientGUID
 
 	// Check if signing is required
 	// Client security mode bit 0x02 = signing required

@@ -19,6 +19,10 @@ type CacheConfig struct {
 	// Default: 5 seconds. Set to 0 to disable stat caching.
 	StatCacheTTL time.Duration
 
+	// NegativeTTL is the time-to-live for negative cache entries
+	// (paths known not to exist). Default: 2 seconds.
+	NegativeTTL time.Duration
+
 	// MaxCacheEntries is the maximum number of cache entries.
 	// When exceeded, oldest entries are evicted. Default: 1000.
 	MaxCacheEntries int
@@ -41,8 +45,13 @@ type metadataCache struct {
 	config        CacheConfig
 	dirCache      map[string]*dirCacheEntry
 	statCache     map[string]*statCacheEntry
+	negativeCache map[string]time.Time // paths known not to exist
 	accessOrder   []string // LRU tracking
 	enabled       bool
+
+	// Cache hit/miss stats
+	hits   int64
+	misses int64
 }
 
 type dirCacheEntry struct {
@@ -66,13 +75,17 @@ func newMetadataCache(config CacheConfig) *metadataCache {
 	if config.StatCacheTTL == 0 {
 		config.StatCacheTTL = 5 * time.Second
 	}
+	if config.NegativeTTL == 0 {
+		config.NegativeTTL = 2 * time.Second
+	}
 
 	return &metadataCache{
-		config:      config,
-		dirCache:    make(map[string]*dirCacheEntry),
-		statCache:   make(map[string]*statCacheEntry),
-		accessOrder: make([]string, 0, config.MaxCacheEntries),
-		enabled:     config.EnableCache,
+		config:        config,
+		dirCache:      make(map[string]*dirCacheEntry),
+		statCache:     make(map[string]*statCacheEntry),
+		negativeCache: make(map[string]time.Time),
+		accessOrder:   make([]string, 0, config.MaxCacheEntries),
+		enabled:       config.EnableCache,
 	}
 }
 
@@ -87,14 +100,17 @@ func (c *metadataCache) getDirEntries(path string) ([]fs.DirEntry, bool) {
 
 	entry, ok := c.dirCache[path]
 	if !ok {
+		c.misses++
 		return nil, false
 	}
 
 	// Check if expired
 	if time.Since(entry.cachedAt) > c.config.DirCacheTTL {
+		c.misses++
 		return nil, false
 	}
 
+	c.hits++
 	return entry.entries, true
 }
 
@@ -127,15 +143,54 @@ func (c *metadataCache) getStatInfo(path string) (fs.FileInfo, bool) {
 
 	entry, ok := c.statCache[path]
 	if !ok {
+		c.misses++
 		return nil, false
 	}
 
 	// Check if expired
 	if time.Since(entry.cachedAt) > c.config.StatCacheTTL {
+		c.misses++
 		return nil, false
 	}
 
+	c.hits++
 	return entry.info, true
+}
+
+// isNegativelyCached returns true if the path is known not to exist.
+func (c *metadataCache) isNegativelyCached(path string) bool {
+	if !c.enabled || c.config.NegativeTTL == 0 {
+		return false
+	}
+
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+
+	cachedAt, ok := c.negativeCache[path]
+	if !ok {
+		return false
+	}
+
+	if time.Since(cachedAt) > c.config.NegativeTTL {
+		return false
+	}
+
+	c.hits++
+	return true
+}
+
+// putNegative records that a path does not exist.
+func (c *metadataCache) putNegative(path string) {
+	if !c.enabled || c.config.NegativeTTL == 0 {
+		return
+	}
+
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	c.negativeCache[path] = time.Now()
+	c.trackAccess("neg:" + path)
+	c.evictIfNeeded()
 }
 
 // putStatInfo stores file info in the cache.
@@ -169,6 +224,7 @@ func (c *metadataCache) invalidate(path string) {
 	// Invalidate the path itself
 	delete(c.dirCache, path)
 	delete(c.statCache, path)
+	delete(c.negativeCache, path)
 
 	// Invalidate parent directory (since its listing has changed)
 	parentPath := c.getParentPath(path)
@@ -186,6 +242,7 @@ func (c *metadataCache) invalidateAll() {
 
 	c.dirCache = make(map[string]*dirCacheEntry)
 	c.statCache = make(map[string]*statCacheEntry)
+	c.negativeCache = make(map[string]time.Time)
 	c.accessOrder = c.accessOrder[:0]
 }
 
@@ -242,11 +299,15 @@ func (c *metadataCache) getParentPath(path string) string {
 
 // CacheStats provides statistics about cache usage.
 type CacheStats struct {
-	Enabled         bool
-	DirCacheEntries int
-	StatCacheEntries int
-	TotalEntries    int
-	MaxEntries      int
+	Enabled              bool
+	DirCacheEntries      int
+	StatCacheEntries     int
+	NegativeCacheEntries int
+	TotalEntries         int
+	MaxEntries           int
+	Hits                 int64
+	Misses               int64
+	HitRate              float64
 }
 
 // Stats returns cache statistics.
@@ -254,11 +315,21 @@ func (c *metadataCache) Stats() CacheStats {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 
+	total := c.hits + c.misses
+	var hitRate float64
+	if total > 0 {
+		hitRate = float64(c.hits) / float64(total)
+	}
+
 	return CacheStats{
-		Enabled:          c.enabled,
-		DirCacheEntries:  len(c.dirCache),
-		StatCacheEntries: len(c.statCache),
-		TotalEntries:     len(c.dirCache) + len(c.statCache),
-		MaxEntries:       c.config.MaxCacheEntries,
+		Enabled:              c.enabled,
+		DirCacheEntries:      len(c.dirCache),
+		StatCacheEntries:     len(c.statCache),
+		NegativeCacheEntries: len(c.negativeCache),
+		TotalEntries:         len(c.dirCache) + len(c.statCache) + len(c.negativeCache),
+		MaxEntries:           c.config.MaxCacheEntries,
+		Hits:                 c.hits,
+		Misses:               c.misses,
+		HitRate:              hitRate,
 	}
 }

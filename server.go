@@ -35,6 +35,12 @@ type Server struct {
 	shutdownCh chan struct{}
 
 	logger ServerLogger
+
+	// Enterprise features
+	lockManager *LockManager
+	rateLimiter *RateLimiter
+	metrics     *MetricsCollector
+	workerPool  *WorkerPool
 }
 
 // connState tracks state for each connection
@@ -46,6 +52,7 @@ type connState struct {
 	dialect         SMBDialect // Negotiated dialect
 	signingRequired bool       // Whether signing is required for this connection
 	preauthHash     []byte     // SMB 3.1.1 preauth integrity hash (for key derivation)
+	clientGUID      [16]byte   // Client GUID from NEGOTIATE
 }
 
 // NewServer creates a new SMB server
@@ -95,14 +102,18 @@ func NewServer(options ServerOptions) (*Server, error) {
 	ctx, cancel := context.WithCancel(context.Background())
 
 	s := &Server{
-		options:    options,
-		shares:     make(map[string]*Share),
-		sessions:   NewSessionManager(options.IdleTimeout),
-		ctx:        ctx,
-		cancel:     cancel,
-		conns:      make(map[net.Conn]*connState),
-		shutdownCh: make(chan struct{}),
-		logger:     logger,
+		options:     options,
+		shares:      make(map[string]*Share),
+		sessions:    NewSessionManager(options.IdleTimeout),
+		ctx:         ctx,
+		cancel:      cancel,
+		conns:       make(map[net.Conn]*connState),
+		shutdownCh:  make(chan struct{}),
+		logger:      logger,
+		lockManager: NewLockManager(),
+		rateLimiter: NewRateLimiter(options.RateLimiting),
+		metrics:     NewMetricsCollector(options.EnableMetrics),
+		workerPool:  NewWorkerPool(options.WorkerPool),
 	}
 
 	s.handler = NewSMBHandler(s)
@@ -252,6 +263,9 @@ func (s *Server) Stop() error {
 	// Wait for goroutines to finish
 	s.wg.Wait()
 
+	// Cleanup worker pool
+	s.workerPool.Stop()
+
 	s.logger.Info("SMB server stopped")
 	return nil
 }
@@ -279,12 +293,16 @@ func (s *Server) acceptLoop() {
 				s.connMu.Unlock()
 				s.logger.Warn("Connection limit reached, rejecting connection from %s",
 					conn.RemoteAddr())
+				s.metrics.RecordRejectedConnection()
 				conn.Close()
 				continue
 			}
 			s.connCount++
 			s.connMu.Unlock()
 		}
+
+		// Record connection metrics
+		s.metrics.RecordConnection()
 
 		// Handle connection
 		s.wg.Add(1)
@@ -301,6 +319,8 @@ func (s *Server) handleConnection(conn net.Conn) {
 		delete(s.conns, conn)
 		s.connCount--
 		s.connMu.Unlock()
+		s.metrics.RecordDisconnection()
+		s.rateLimiter.RemoveConnection(conn.RemoteAddr().String())
 	}()
 
 	remoteAddr := conn.RemoteAddr().String()
@@ -530,6 +550,79 @@ func (s *Server) ConnectionCount() int {
 // SessionCount returns the number of active sessions
 func (s *Server) SessionCount() int {
 	return s.sessions.SessionCount()
+}
+
+// Metrics returns the server's metrics collector
+func (s *Server) Metrics() *MetricsCollector {
+	return s.metrics
+}
+
+// RateLimiter returns the server's rate limiter
+func (s *Server) RateLimiter() *RateLimiter {
+	return s.rateLimiter
+}
+
+// LockManager returns the server's lock manager
+func (s *Server) LockManager() *LockManager {
+	return s.lockManager
+}
+
+// WorkerPool returns the server's worker pool
+func (s *Server) WorkerPool() *WorkerPool {
+	return s.workerPool
+}
+
+// UpdateOptions applies new server options at runtime.
+// Only tuning parameters (timeouts, sizes, rate limits) are updated.
+// Structural changes (port, hostname) require a server restart.
+func (s *Server) UpdateOptions(opts ServerOptions) {
+	// Update timeouts
+	if opts.IdleTimeout > 0 {
+		s.options.IdleTimeout = opts.IdleTimeout
+	}
+	if opts.ReadTimeout > 0 {
+		s.options.ReadTimeout = opts.ReadTimeout
+	}
+	if opts.WriteTimeout > 0 {
+		s.options.WriteTimeout = opts.WriteTimeout
+	}
+	if opts.MaxReadSize > 0 {
+		s.options.MaxReadSize = opts.MaxReadSize
+	}
+	if opts.MaxWriteSize > 0 {
+		s.options.MaxWriteSize = opts.MaxWriteSize
+	}
+	if opts.MaxConnections > 0 {
+		s.options.MaxConnections = opts.MaxConnections
+	}
+
+	// Update rate limiter
+	if opts.RateLimiting.Enabled || s.options.RateLimiting.Enabled {
+		s.rateLimiter = NewRateLimiter(opts.RateLimiting)
+		s.options.RateLimiting = opts.RateLimiting
+	}
+
+	// Update worker pool size
+	if opts.WorkerPool.Enabled && opts.WorkerPool.Size > 0 {
+		s.workerPool.Resize(opts.WorkerPool.Size)
+	}
+
+	s.logger.Info("Server options updated")
+}
+
+// UpdateShareOptions updates options for a specific share at runtime.
+func (s *Server) UpdateShareOptions(shareName string, opts ShareOptions) error {
+	s.sharesMu.Lock()
+	defer s.sharesMu.Unlock()
+
+	share, exists := s.shares[shareName]
+	if !exists {
+		return fmt.Errorf("share %q not found", shareName)
+	}
+
+	share.options = opts
+	s.logger.Info("Share options updated: %s", shareName)
+	return nil
 }
 
 // Errors specific to the server

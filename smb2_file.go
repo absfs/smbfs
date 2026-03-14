@@ -447,6 +447,7 @@ func (h *SMBHandler) handleRead(state *connState, msg *SMB2Message) ([]byte, NTS
 	buf = buf[:n]
 
 	h.server.logger.Debug("READ: read %d bytes from %s", n, of.Path)
+	h.server.metrics.RecordBytesRead(int64(n))
 
 	// If we read 0 bytes and got EOF, return end of file status
 	if n == 0 && (err == io.EOF || err == nil) {
@@ -549,6 +550,7 @@ func (h *SMBHandler) handleWrite(state *connState, msg *SMB2Message) ([]byte, NT
 	}
 
 	h.server.logger.Debug("WRITE: wrote %d bytes to %s", n, of.Path)
+	h.server.metrics.RecordBytesWritten(int64(n))
 
 	// Build response (structure size 17)
 	w := NewByteWriter(17)

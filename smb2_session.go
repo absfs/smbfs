@@ -88,8 +88,8 @@ func (h *SMBHandler) handleSessionSetupImpl(state *connState, msg *SMB2Message, 
 	if session == nil {
 		h.server.logger.Debug("SESSION_SETUP: Creating new session")
 		session = h.server.sessions.CreateSession(
-			h.server.options.MaxDialect,
-			[16]byte{}, // TODO: Extract client GUID from negotiate context
+			state.dialect,
+			state.clientGUID,
 			state.remoteAddr,
 		)
 		isNewSession = true
@@ -145,6 +145,7 @@ func (h *SMBHandler) handleSessionSetupImpl(state *connState, msg *SMB2Message, 
 
 		// Authentication failed completely
 		h.server.logger.Warn("SESSION_SETUP: Authentication failed")
+		h.server.metrics.RecordAuthFailure()
 		if isNewSession {
 			h.server.sessions.DestroySession(session.ID)
 		}
@@ -162,6 +163,9 @@ func (h *SMBHandler) handleSessionSetupImpl(state *connState, msg *SMB2Message, 
 	// Mark session as valid with derived signing key
 	session.SetValid(authResult.Username, authResult.Domain, authResult.IsGuest, signingKey)
 	state.session = session
+
+	// Record session metric
+	h.server.metrics.RecordSession()
 
 	h.server.logger.Info("SESSION_SETUP: Session %d established - User=%s, Guest=%v, Signing=%v",
 		session.ID, authResult.Username, authResult.IsGuest, signingKey != nil)

@@ -39,6 +39,11 @@ type ServerOptions struct {
 	// Performance
 	MaxReadSize  uint32 // Maximum read size (default: 8MB)
 	MaxWriteSize uint32 // Maximum write size (default: 8MB)
+
+	// Enterprise features
+	RateLimiting  RateLimiterConfig  // Rate limiting configuration
+	EnableMetrics bool               // Enable metrics collection
+	WorkerPool    WorkerPoolConfig   // Worker pool configuration
 }
 
 // DefaultServerOptions returns sensible default server options
