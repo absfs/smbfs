@@ -2,6 +2,7 @@ package smbfs
 
 import (
 	"crypto/rand"
+	"fmt"
 	"testing"
 	"time"
 
@@ -1280,5 +1281,451 @@ func BenchmarkSessionManager_CreateSession(b *testing.B) {
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		_ = mgr.CreateSession(SMB3_1_1, guid, "192.168.1.100")
+	}
+}
+
+// =============================================================================
+// Phase 2 tests
+// =============================================================================
+
+// --- Server Config ---
+
+func TestDefaultServerOptions(t *testing.T) {
+	opts := DefaultServerOptions()
+
+	if opts.Port != 445 {
+		t.Errorf("Port = %d, want 445", opts.Port)
+	}
+	if opts.MaxConnections != 100 {
+		t.Errorf("MaxConnections = %d, want 100", opts.MaxConnections)
+	}
+	if opts.ReadTimeout != 30*time.Second {
+		t.Errorf("ReadTimeout = %v, want 30s", opts.ReadTimeout)
+	}
+	if opts.WriteTimeout != 30*time.Second {
+		t.Errorf("WriteTimeout = %v, want 30s", opts.WriteTimeout)
+	}
+	if opts.IdleTimeout != 15*time.Minute {
+		t.Errorf("IdleTimeout = %v, want 15m", opts.IdleTimeout)
+	}
+	if opts.MinDialect != SMB2_0_2 {
+		t.Errorf("MinDialect = %v, want SMB2_0_2", opts.MinDialect)
+	}
+	if opts.MaxDialect != SMB3_1_1 {
+		t.Errorf("MaxDialect = %v, want SMB3_1_1", opts.MaxDialect)
+	}
+}
+
+func TestDefaultShareOptions(t *testing.T) {
+	opts := DefaultShareOptions("MyShare")
+
+	if opts.ShareName != "MyShare" {
+		t.Errorf("ShareName = %q, want %q", opts.ShareName, "MyShare")
+	}
+	if opts.ReadOnly {
+		t.Error("ReadOnly = true, want false")
+	}
+	if opts.SharePath != "/" {
+		t.Errorf("SharePath = %q, want %q", opts.SharePath, "/")
+	}
+}
+
+func TestShareAccessors(t *testing.T) {
+	fs, err := memfs.NewFS()
+	if err != nil {
+		t.Fatalf("Failed to create memfs: %v", err)
+	}
+
+	opts := ShareOptions{
+		ShareName:  "TestAcc",
+		ReadOnly:   true,
+		AllowGuest: true,
+		ShareType:  SMBShareTypePipe,
+	}
+	share := NewShare(fs, opts)
+
+	if share.FileSystem() == nil {
+		t.Error("FileSystem() returned nil")
+	}
+	if share.Options().ShareName != "TestAcc" {
+		t.Errorf("Options().ShareName = %q, want %q", share.Options().ShareName, "TestAcc")
+	}
+	if share.FileHandles() == nil {
+		t.Error("FileHandles() returned nil")
+	}
+	if !share.IsReadOnly() {
+		t.Error("IsReadOnly() = false, want true")
+	}
+	if share.GetShareType() != SMBShareTypePipe {
+		t.Errorf("GetShareType() = %v, want SMBShareTypePipe", share.GetShareType())
+	}
+	if !share.AllowsGuest() {
+		t.Error("AllowsGuest() = false, want true")
+	}
+
+	// Verify default share type when zero
+	share2 := NewShare(fs, ShareOptions{ShareName: "Default"})
+	if share2.GetShareType() != SMBShareTypeDisk {
+		t.Errorf("GetShareType() default = %v, want SMBShareTypeDisk", share2.GetShareType())
+	}
+}
+
+func TestShareValidateCredentials(t *testing.T) {
+	fs, err := memfs.NewFS()
+	if err != nil {
+		t.Fatalf("Failed to create memfs: %v", err)
+	}
+
+	t.Run("with users", func(t *testing.T) {
+		share := NewShare(fs, ShareOptions{
+			ShareName: "AuthShare",
+			Users:     map[string]string{"alice": "pass123", "bob": "secret"},
+		})
+
+		if !share.ValidateCredentials("alice", "pass123") {
+			t.Error("correct creds should return true")
+		}
+		if share.ValidateCredentials("alice", "wrong") {
+			t.Error("wrong password should return false")
+		}
+		if share.ValidateCredentials("unknown", "pass123") {
+			t.Error("unknown user should return false")
+		}
+	})
+
+	t.Run("without users", func(t *testing.T) {
+		share := NewShare(fs, ShareOptions{ShareName: "NoAuth"})
+
+		if !share.ValidateCredentials("anyone", "anything") {
+			t.Error("no users configured should always return true")
+		}
+	})
+}
+
+func TestDefaultLogger(t *testing.T) {
+	logger := NewDefaultLogger(true)
+
+	// Just verify no panic; the methods write to the standard log which we
+	// don't capture here but the important thing is they don't crash.
+	logger.Debug("debug %s", "msg")
+	logger.Info("info %s", "msg")
+	logger.Warn("warn %s", "msg")
+	logger.Error("error %s", "msg")
+
+	// With debug disabled
+	loggerNonDebug := NewDefaultLogger(false)
+	loggerNonDebug.Debug("should be suppressed %s", "msg")
+	loggerNonDebug.Info("info %s", "msg")
+}
+
+func TestNullLoggerMethods(t *testing.T) {
+	logger := &NullLogger{}
+
+	// All methods must be callable without panic
+	logger.Debug("debug %s", "msg")
+	logger.Info("info %s", "msg")
+	logger.Warn("warn %s", "msg")
+	logger.Error("error %s", "msg")
+}
+
+func TestServerAccessors(t *testing.T) {
+	srv := setupTestServer(t)
+
+	if srv.Options().Port != 445 {
+		t.Errorf("Options().Port = %d, want 445", srv.Options().Port)
+	}
+	if srv.Sessions() == nil {
+		t.Error("Sessions() returned nil")
+	}
+	if srv.Logger() == nil {
+		t.Error("Logger() returned nil")
+	}
+}
+
+// --- Session Manager gaps ---
+
+func TestSessionManager_GetSessionByGUID(t *testing.T) {
+	mgr := NewSessionManager(15 * time.Minute)
+
+	guid := [16]byte{10, 20, 30, 40, 50, 60, 70, 80, 90, 100, 110, 120, 130, 140, 150, 160}
+	session := mgr.CreateSession(SMB3_1_1, guid, "10.0.0.1")
+
+	t.Run("hit", func(t *testing.T) {
+		found := mgr.GetSessionByGUID(guid)
+		if found == nil {
+			t.Fatal("GetSessionByGUID() returned nil")
+		}
+		if found.ID != session.ID {
+			t.Errorf("session ID = %d, want %d", found.ID, session.ID)
+		}
+	})
+
+	t.Run("miss", func(t *testing.T) {
+		wrongGUID := [16]byte{0xFF, 0xFF}
+		found := mgr.GetSessionByGUID(wrongGUID)
+		if found != nil {
+			t.Error("GetSessionByGUID() with wrong GUID should return nil")
+		}
+	})
+}
+
+func TestSessionManager_UpdateActivity(t *testing.T) {
+	mgr := NewSessionManager(15 * time.Minute)
+	session := mgr.CreateSession(SMB3_1_1, [16]byte{}, "10.0.0.1")
+
+	before := session.LastActivity
+	time.Sleep(5 * time.Millisecond)
+	mgr.UpdateActivity(session.ID)
+
+	session.mu.RLock()
+	after := session.LastActivity
+	session.mu.RUnlock()
+
+	if !after.After(before) {
+		t.Errorf("LastActivity was not updated: before=%v, after=%v", before, after)
+	}
+}
+
+func TestSession_GetAllTreeConnections(t *testing.T) {
+	mgr := NewSessionManager(15 * time.Minute)
+	session := mgr.CreateSession(SMB3_1_1, [16]byte{}, "10.0.0.1")
+	session.SetValid("user", "", false, nil)
+
+	fs, err := memfs.NewFS()
+	if err != nil {
+		t.Fatalf("Failed to create memfs: %v", err)
+	}
+	share := NewShare(fs, ShareOptions{ShareName: "S"})
+
+	session.AddTreeConnection("S1", share, false)
+	session.AddTreeConnection("S2", share, false)
+	session.AddTreeConnection("S3", share, false)
+
+	trees := session.GetAllTreeConnections()
+	if len(trees) != 3 {
+		t.Errorf("GetAllTreeConnections() returned %d, want 3", len(trees))
+	}
+}
+
+func TestSession_ValidateTreeConnection(t *testing.T) {
+	mgr := NewSessionManager(15 * time.Minute)
+	session := mgr.CreateSession(SMB3_1_1, [16]byte{}, "10.0.0.1")
+	session.SetValid("user", "", false, nil)
+
+	fs, err := memfs.NewFS()
+	if err != nil {
+		t.Fatalf("Failed to create memfs: %v", err)
+	}
+	share := NewShare(fs, ShareOptions{ShareName: "VS"})
+	tree := session.AddTreeConnection("VS", share, false)
+
+	t.Run("valid tree", func(t *testing.T) {
+		found, status := session.ValidateTreeConnection(tree.ID)
+		if status != STATUS_SUCCESS {
+			t.Errorf("status = %v, want STATUS_SUCCESS", status)
+		}
+		if found == nil || found.ID != tree.ID {
+			t.Error("returned wrong tree connection")
+		}
+	})
+
+	t.Run("invalid tree ID", func(t *testing.T) {
+		_, status := session.ValidateTreeConnection(0xDEAD)
+		if status != STATUS_NETWORK_NAME_DELETED {
+			t.Errorf("status = %v, want STATUS_NETWORK_NAME_DELETED", status)
+		}
+	})
+}
+
+// --- FileHandleMap gaps ---
+
+func TestFileHandleMap_GetBySession(t *testing.T) {
+	m := NewFileHandleMap()
+	fs, err := memfs.NewFS()
+	if err != nil {
+		t.Fatalf("Failed to create memfs: %v", err)
+	}
+
+	file, _ := fs.Create("/sess.txt")
+	of := m.Allocate(file, "/sess.txt", false, FILE_READ_DATA, FILE_SHARE_READ, FILE_OPEN, 0, 1, 100)
+
+	t.Run("matching session", func(t *testing.T) {
+		got := m.GetBySession(of.ID, 100)
+		if got == nil {
+			t.Fatal("GetBySession() returned nil for correct session")
+		}
+		if got.ID != of.ID {
+			t.Errorf("ID mismatch: got %v, want %v", got.ID, of.ID)
+		}
+	})
+
+	t.Run("wrong session", func(t *testing.T) {
+		got := m.GetBySession(of.ID, 999)
+		if got != nil {
+			t.Error("GetBySession() should return nil for wrong session")
+		}
+	})
+}
+
+func TestFileHandleMap_GetByTree(t *testing.T) {
+	m := NewFileHandleMap()
+	fs, err := memfs.NewFS()
+	if err != nil {
+		t.Fatalf("Failed to create memfs: %v", err)
+	}
+
+	file, _ := fs.Create("/tree.txt")
+	of := m.Allocate(file, "/tree.txt", false, FILE_READ_DATA, FILE_SHARE_READ, FILE_OPEN, 0, 5, 200)
+
+	t.Run("matching tree and session", func(t *testing.T) {
+		got := m.GetByTree(of.ID, 5, 200)
+		if got == nil {
+			t.Fatal("GetByTree() returned nil for correct tree+session")
+		}
+	})
+
+	t.Run("wrong tree", func(t *testing.T) {
+		got := m.GetByTree(of.ID, 99, 200)
+		if got != nil {
+			t.Error("GetByTree() should return nil for wrong tree")
+		}
+	})
+
+	t.Run("wrong session", func(t *testing.T) {
+		got := m.GetByTree(of.ID, 5, 999)
+		if got != nil {
+			t.Error("GetByTree() should return nil for wrong session")
+		}
+	})
+}
+
+func TestFileHandleMap_Count(t *testing.T) {
+	m := NewFileHandleMap()
+	fs, err := memfs.NewFS()
+	if err != nil {
+		t.Fatalf("Failed to create memfs: %v", err)
+	}
+
+	if m.Count() != 0 {
+		t.Errorf("empty map Count() = %d, want 0", m.Count())
+	}
+
+	var ids [3]FileID
+	for i := 0; i < 3; i++ {
+		f, _ := fs.Create(fmt.Sprintf("/count%d.txt", i))
+		of := m.Allocate(f, fmt.Sprintf("/count%d.txt", i), false, FILE_READ_DATA, FILE_SHARE_READ, FILE_OPEN, 0, 1, 100)
+		ids[i] = of.ID
+	}
+
+	if m.Count() != 3 {
+		t.Errorf("after 3 allocations Count() = %d, want 3", m.Count())
+	}
+
+	_ = m.Release(ids[0])
+
+	if m.Count() != 2 {
+		t.Errorf("after 1 release Count() = %d, want 2", m.Count())
+	}
+}
+
+func TestFileHandleMap_GetOpenHandlesForPath(t *testing.T) {
+	m := NewFileHandleMap()
+	fs, err := memfs.NewFS()
+	if err != nil {
+		t.Fatalf("Failed to create memfs: %v", err)
+	}
+
+	f1, _ := fs.Create("/shared.txt")
+	f2, _ := fs.Create("/shared.txt")
+	m.Allocate(f1, "/shared.txt", false, FILE_READ_DATA, FILE_SHARE_READ, FILE_OPEN, 0, 1, 100)
+	m.Allocate(f2, "/shared.txt", false, FILE_READ_DATA, FILE_SHARE_READ, FILE_OPEN, 0, 1, 200)
+
+	handles := m.GetOpenHandlesForPath("/shared.txt")
+	if len(handles) != 2 {
+		t.Errorf("GetOpenHandlesForPath() returned %d handles, want 2", len(handles))
+	}
+
+	// Different path should return none
+	handles = m.GetOpenHandlesForPath("/other.txt")
+	if len(handles) != 0 {
+		t.Errorf("GetOpenHandlesForPath(/other.txt) returned %d handles, want 0", len(handles))
+	}
+}
+
+func TestFileHandleMap_UpdateLastAccess(t *testing.T) {
+	m := NewFileHandleMap()
+	fs, err := memfs.NewFS()
+	if err != nil {
+		t.Fatalf("Failed to create memfs: %v", err)
+	}
+
+	file, _ := fs.Create("/access.txt")
+	of := m.Allocate(file, "/access.txt", false, FILE_READ_DATA, FILE_SHARE_READ, FILE_OPEN, 0, 1, 100)
+
+	before := of.LastAccess
+	time.Sleep(5 * time.Millisecond)
+	m.UpdateLastAccess(of.ID)
+
+	updated := m.Get(of.ID)
+	if !updated.LastAccess.After(before) {
+		t.Errorf("LastAccess was not updated: before=%v, after=%v", before, updated.LastAccess)
+	}
+}
+
+func TestFileHandleMap_DeleteOnClose(t *testing.T) {
+	m := NewFileHandleMap()
+	fs, err := memfs.NewFS()
+	if err != nil {
+		t.Fatalf("Failed to create memfs: %v", err)
+	}
+
+	file, _ := fs.Create("/del.txt")
+	of := m.Allocate(file, "/del.txt", false, FILE_READ_DATA, FILE_SHARE_READ, FILE_OPEN, 0, 1, 100)
+
+	// Initially false
+	if m.GetDeleteOnClose(of.ID) {
+		t.Error("GetDeleteOnClose() = true, want false initially")
+	}
+
+	m.SetDeleteOnClose(of.ID, true)
+	if !m.GetDeleteOnClose(of.ID) {
+		t.Error("GetDeleteOnClose() = false after SetDeleteOnClose(true)")
+	}
+
+	m.SetDeleteOnClose(of.ID, false)
+	if m.GetDeleteOnClose(of.ID) {
+		t.Error("GetDeleteOnClose() = true after SetDeleteOnClose(false)")
+	}
+}
+
+// --- Guest Auth ---
+
+func TestGuestAuthenticator(t *testing.T) {
+	auth := NewGuestAuthenticator()
+	if auth == nil {
+		t.Fatal("NewGuestAuthenticator() returned nil")
+	}
+
+	result, err := auth.Authenticate([]byte("any blob"))
+	if err != nil {
+		t.Fatalf("Authenticate() error: %v", err)
+	}
+	if !result.Success {
+		t.Error("Success = false, want true")
+	}
+	if !result.IsGuest {
+		t.Error("IsGuest = false, want true")
+	}
+	if result.Username != "Guest" {
+		t.Errorf("Username = %q, want %q", result.Username, "Guest")
+	}
+
+	// Also try with empty blob
+	result2, err := auth.Authenticate(nil)
+	if err != nil {
+		t.Fatalf("Authenticate(nil) error: %v", err)
+	}
+	if !result2.Success {
+		t.Error("Authenticate(nil) Success = false, want true")
 	}
 }
