@@ -7,7 +7,6 @@ import (
 	"bytes"
 	"fmt"
 	"io"
-	"io/fs"
 	"os"
 	"strconv"
 	"testing"
@@ -149,9 +148,14 @@ func TestIntegration_CreateAndReadFile(t *testing.T) {
 	}
 
 	// Read file back
-	data, err := fs.ReadFile(fsys, testPath)
+	readFile, err := fsys.Open(testPath)
 	if err != nil {
-		t.Fatalf("ReadFile failed: %v", err)
+		t.Fatalf("Open for read failed: %v", err)
+	}
+	data, err := io.ReadAll(readFile)
+	readFile.Close()
+	if err != nil {
+		t.Fatalf("ReadAll failed: %v", err)
 	}
 
 	if !bytes.Equal(data, testContent) {
@@ -333,9 +337,14 @@ func TestIntegration_Rename(t *testing.T) {
 	}
 
 	// Verify new path exists with same content
-	data, err := fs.ReadFile(fsys, newPath)
+	readFile, err := fsys.Open(newPath)
 	if err != nil {
-		t.Fatalf("ReadFile failed: %v", err)
+		t.Fatalf("Open for read failed: %v", err)
+	}
+	data, err := io.ReadAll(readFile)
+	readFile.Close()
+	if err != nil {
+		t.Fatalf("ReadAll failed: %v", err)
 	}
 
 	if !bytes.Equal(data, testContent) {
@@ -538,7 +547,14 @@ func TestIntegration_ConcurrentOperations(t *testing.T) {
 			file.Close()
 
 			// Read back
-			data, err := fs.ReadFile(fsys, testPath)
+			readFile, err := fsys.Open(testPath)
+			if err != nil {
+				errors <- err
+				done <- false
+				return
+			}
+			data, err := io.ReadAll(readFile)
+			readFile.Close()
 			if err != nil {
 				errors <- err
 				done <- false

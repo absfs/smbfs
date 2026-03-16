@@ -188,7 +188,7 @@ func (h *SMBHandler) handleSessionSetupImpl(state *connState, msg *SMB2Message, 
 	w.WriteUint16(sessionFlags)
 
 	// Security buffer (for response blob from authenticator)
-	if authResult.ResponseBlob != nil && len(authResult.ResponseBlob) > 0 {
+	if len(authResult.ResponseBlob) > 0 {
 		secBufOffset := SMB2HeaderSize + 8 // After header and fixed response
 		w.WriteUint16(uint16(secBufOffset))
 		w.WriteUint16(uint16(len(authResult.ResponseBlob)))

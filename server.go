@@ -326,7 +326,7 @@ func (s *Server) handleConnection(conn net.Conn) {
 		}
 
 		// Set read deadline
-		conn.SetReadDeadline(time.Now().Add(s.options.ReadTimeout))
+		_ = conn.SetReadDeadline(time.Now().Add(s.options.ReadTimeout))
 
 		// Read message
 		msg, err := s.readMessage(conn)
@@ -365,7 +365,7 @@ func (s *Server) handleConnection(conn net.Conn) {
 
 		// Send response
 		if response != nil {
-			conn.SetWriteDeadline(time.Now().Add(s.options.WriteTimeout))
+			_ = conn.SetWriteDeadline(time.Now().Add(s.options.WriteTimeout))
 			responseBytes, err := s.writeMessage(conn, response)
 			if err != nil {
 				s.logger.Error("Write error to %s: %v", remoteAddr, err)
@@ -466,7 +466,7 @@ func (s *Server) writeMessage(conn net.Conn, msg *SMB2Message) ([]byte, error) {
 	copy(buf[4+SMB2HeaderSize:], msg.Payload)
 
 	// Apply message signing if signing key is set
-	if msg.SigningKey != nil && len(msg.SigningKey) > 0 {
+	if len(msg.SigningKey) > 0 {
 		// Sign the SMB2 message (everything after NetBIOS header)
 		smb2Message := buf[4:]
 		signature := SignMessage(smb2Message, msg.SigningKey, msg.Dialect)
@@ -542,6 +542,6 @@ var (
 // generateMessageID generates a random message ID
 func generateMessageID() uint64 {
 	var buf [8]byte
-	rand.Read(buf[:])
+	_, _ = rand.Read(buf[:])
 	return binary.LittleEndian.Uint64(buf[:])
 }

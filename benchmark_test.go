@@ -7,7 +7,6 @@ import (
 	"bytes"
 	"fmt"
 	"io"
-	"io/fs"
 	"testing"
 	"time"
 )
@@ -131,9 +130,14 @@ func BenchmarkSmallFileRead(b *testing.B) {
 	b.SetBytes(int64(len(data)))
 
 	for i := 0; i < b.N; i++ {
-		_, err := fs.ReadFile(fsys, path)
+		f, err := fsys.Open(path)
 		if err != nil {
-			b.Fatalf("ReadFile failed: %v", err)
+			b.Fatalf("Open failed: %v", err)
+		}
+		_, err = io.ReadAll(f)
+		f.Close()
+		if err != nil {
+			b.Fatalf("ReadAll failed: %v", err)
 		}
 	}
 }
@@ -158,9 +162,14 @@ func BenchmarkMediumFileRead(b *testing.B) {
 	b.SetBytes(int64(len(data)))
 
 	for i := 0; i < b.N; i++ {
-		_, err := fs.ReadFile(fsys, path)
+		f, err := fsys.Open(path)
 		if err != nil {
-			b.Fatalf("ReadFile failed: %v", err)
+			b.Fatalf("Open failed: %v", err)
+		}
+		_, err = io.ReadAll(f)
+		f.Close()
+		if err != nil {
+			b.Fatalf("ReadAll failed: %v", err)
 		}
 	}
 }
@@ -185,9 +194,14 @@ func BenchmarkLargeFileRead(b *testing.B) {
 	b.SetBytes(int64(len(data)))
 
 	for i := 0; i < b.N; i++ {
-		_, err := fs.ReadFile(fsys, path)
+		f, err := fsys.Open(path)
 		if err != nil {
-			b.Fatalf("ReadFile failed: %v", err)
+			b.Fatalf("Open failed: %v", err)
+		}
+		_, err = io.ReadAll(f)
+		f.Close()
+		if err != nil {
+			b.Fatalf("ReadAll failed: %v", err)
 		}
 	}
 }

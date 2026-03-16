@@ -204,7 +204,7 @@ func TestServer_RemoveShare(t *testing.T) {
 			t.Fatalf("Failed to create memfs: %v", err)
 		}
 		opts := ShareOptions{ShareName: "ToRemove"}
-		srv.AddShare(fs, opts)
+		_ = srv.AddShare(fs, opts)
 
 		err = srv.RemoveShare("ToRemove")
 		if err != nil {
@@ -234,8 +234,8 @@ func TestServer_GetShare(t *testing.T) {
 		t.Fatalf("Failed to create memfs: %v", err)
 	}
 
-	srv.AddShare(fs, ShareOptions{ShareName: "Share1"})
-	srv.AddShare(fs, ShareOptions{ShareName: "Share2"})
+	_ = srv.AddShare(fs, ShareOptions{ShareName: "Share1"})
+	_ = srv.AddShare(fs, ShareOptions{ShareName: "Share2"})
 
 	t.Run("get existing share", func(t *testing.T) {
 		share := srv.GetShare("Share1")
@@ -264,9 +264,9 @@ func TestServer_ListShares(t *testing.T) {
 	}
 
 	t.Run("list visible shares only", func(t *testing.T) {
-		srv.AddShare(fs, ShareOptions{ShareName: "Public1", Hidden: false})
-		srv.AddShare(fs, ShareOptions{ShareName: "Public2", Hidden: false})
-		srv.AddShare(fs, ShareOptions{ShareName: "Hidden1", Hidden: true})
+		_ = srv.AddShare(fs, ShareOptions{ShareName: "Public1", Hidden: false})
+		_ = srv.AddShare(fs, ShareOptions{ShareName: "Public2", Hidden: false})
+		_ = srv.AddShare(fs, ShareOptions{ShareName: "Hidden1", Hidden: true})
 
 		shares := srv.ListShares()
 		if len(shares) != 2 {
@@ -1275,7 +1275,7 @@ func BenchmarkFileHandleMap_Allocate(b *testing.B) {
 func BenchmarkSessionManager_CreateSession(b *testing.B) {
 	mgr := NewSessionManager(15 * time.Minute)
 	guid := [16]byte{}
-	rand.Read(guid[:])
+	_, _ = rand.Read(guid[:])
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
