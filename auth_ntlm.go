@@ -10,7 +10,7 @@ import (
 	"log"
 	"strings"
 
-	"golang.org/x/crypto/md4"
+	"golang.org/x/crypto/md4" //nolint:staticcheck // MD4 required by NTLM protocol
 )
 
 // NTLM message types
@@ -134,7 +134,7 @@ func (a *NTLMAuthenticator) handleNegotiate(blob []byte) (*AuthResult, error) {
 
 	// Generate 8-byte server challenge
 	a.serverChallenge = make([]byte, 8)
-	rand.Read(a.serverChallenge)
+	_, _ = rand.Read(a.serverChallenge)
 	a.state = 1
 
 	// Build Type 2 (Challenge) message
@@ -186,12 +186,16 @@ func (a *NTLMAuthenticator) handleAuthenticate(blob []byte) (*AuthResult, error)
 
 	if isGuestAttempt {
 		if a.allowGuest {
+			// Compute session key for guest using empty password
+			// This is required for SMB signing to work with Windows 11 24H2
+			sessionKey := a.verifyAndComputeSessionKey("Guest", "", domain, ntResponse, encryptedSessionKey)
+			log.Printf("[DEBUG] NTLM: Guest authentication, sessionKey len=%d", len(sessionKey))
 			return &AuthResult{
 				Success:      true,
 				IsGuest:      true,
 				Username:     "Guest",
 				Domain:       domain,
-				SessionKey:   nil, // No signing for guest
+				SessionKey:   sessionKey,
 				ResponseBlob: nil,
 			}, nil
 		}
@@ -204,12 +208,15 @@ func (a *NTLMAuthenticator) handleAuthenticate(blob []byte) (*AuthResult, error)
 	if !userExists {
 		// User not found - allow as guest if enabled, otherwise fail
 		if a.allowGuest {
+			// Compute session key for guest using empty password
+			sessionKey := a.verifyAndComputeSessionKey(username, "", domain, ntResponse, encryptedSessionKey)
+			log.Printf("[DEBUG] NTLM: Unknown user %q treated as guest, sessionKey len=%d", username, len(sessionKey))
 			return &AuthResult{
 				Success:      true,
 				IsGuest:      true,
 				Username:     username,
 				Domain:       domain,
-				SessionKey:   nil, // No signing for guest
+				SessionKey:   sessionKey,
 				ResponseBlob: nil,
 			}, nil
 		}
@@ -322,34 +329,6 @@ func (a *NTLMAuthenticator) computeSessionKeyForUser(username, password, domain 
 	return h.Sum(nil)
 }
 
-// verifyNTLMResponse verifies the NTLM response against expected credentials (legacy)
-func (a *NTLMAuthenticator) verifyNTLMResponse(username, password string, ntResponse []byte) bool {
-	// For NTLMv2, the response is at least 24 bytes
-	// For simplicity, we'll accept any non-empty response if the user exists
-	// A full implementation would compute the expected response and compare
-
-	if len(ntResponse) == 0 {
-		return false
-	}
-
-	// Compute NT hash of password
-	ntHash := a.ntHash(password)
-
-	// For NTLMv1: response = DES(NT_Hash, challenge)
-	// For NTLMv2: response = HMAC_MD5(NTv2_Hash, challenge + blob)
-	// We'll do a simplified check - if we have a valid user with password, accept
-
-	// In practice, we should compute the expected response:
-	// 1. NTv2Hash = HMAC_MD5(NT_Hash, uppercase(username) + domain)
-	// 2. Expected = HMAC_MD5(NTv2Hash, serverChallenge + clientBlob)
-
-	// For now, verify we got something reasonable and user exists with password
-	if len(ntResponse) >= 24 && len(ntHash) == 16 {
-		return true // User exists and provided credentials
-	}
-
-	return len(ntResponse) > 0
-}
 
 // ntHash computes the NT hash (MD4 of UTF-16LE password)
 func (a *NTLMAuthenticator) ntHash(password string) []byte {
@@ -437,14 +416,10 @@ func (a *NTLMAuthenticator) buildChallengeMessage() []byte {
 	targetNameUTF16 := EncodeStringToUTF16LE(a.targetName)
 	targetNameLen := len(targetNameUTF16)
 
-	// Include target info if:
-	// 1. Client explicitly requested NEGOTIATE_TARGET_INFO, OR
-	// 2. Client is using NTLMv2 (extended session security) - modern Windows needs timestamp for MIC
-	// Per MS-NLMP, including target info with timestamp enables proper MIC verification
+	// Include target info - required for proper NTLM authentication
 	var targetInfo []byte
 	var targetInfoLen int
-	includeTargetInfo := a.clientFlags&ntlmFlagNegotiateTargetInfo != 0 ||
-		a.clientFlags&ntlmFlagNegotiateExtendedSessionSec != 0
+	includeTargetInfo := true
 	if includeTargetInfo {
 		targetInfo = a.buildTargetInfo()
 		targetInfoLen = len(targetInfo)
@@ -517,11 +492,11 @@ func (a *NTLMAuthenticator) buildResponseFlags() uint32 {
 
 	// Echo back flags that client requested
 	if a.clientFlags != 0 {
-		// Unicode support
+		// Unicode/OEM support - Per MS-NLMP, if UNICODE is set, OEM should be cleared
 		if a.clientFlags&ntlmFlagNegotiateUnicode != 0 {
 			flags |= ntlmFlagNegotiateUnicode
-		}
-		if a.clientFlags&ntlmFlagNegotiateOEM != 0 {
+			// Do NOT set OEM when UNICODE is set
+		} else if a.clientFlags&ntlmFlagNegotiateOEM != 0 {
 			flags |= ntlmFlagNegotiateOEM
 		}
 		// Request target - we provide target name
@@ -588,41 +563,37 @@ const (
 )
 
 // buildTargetInfo builds the AV_PAIR list for target info
-// Order follows fuse-t/go-smb2 reference implementation which works with Windows
+// Following Impacket's approach which works with Windows
 func (a *NTLMAuthenticator) buildTargetInfo() []byte {
 	var buf bytes.Buffer
 
-	nbName := a.targetName
-	nbDomain := a.targetName
-	// For DNS names, use lowercase with .local suffix (common for non-domain machines)
-	dnsName := strings.ToLower(a.targetName) + ".local"
-	dnsDomain := "local"
+	// Use same name for both NetBIOS and DNS (like Impacket does)
+	name := a.targetName
+	domain := a.targetName
 
 	// MsvAvNbDomainName (NetBIOS domain name)
-	a.writeAVPair(&buf, avIDMsvAvNbDomainName, EncodeStringToUTF16LE(nbDomain))
+	a.writeAVPair(&buf, avIDMsvAvNbDomainName, EncodeStringToUTF16LE(domain))
 	// MsvAvNbComputerName (NetBIOS computer name)
-	a.writeAVPair(&buf, avIDMsvAvNbComputerName, EncodeStringToUTF16LE(nbName))
-	// MsvAvDnsDomainName (DNS domain name) - Required by Windows 11 24H2
-	a.writeAVPair(&buf, avIDMsvAvDnsDomainName, EncodeStringToUTF16LE(dnsDomain))
-	// MsvAvDnsComputerName (DNS computer name) - Required by Windows 11 24H2
-	a.writeAVPair(&buf, avIDMsvAvDnsComputerName, EncodeStringToUTF16LE(dnsName))
-
-	// MsvAvTimestamp - REQUIRED for NTLMv2 MIC verification on modern Windows
-	// This is a FILETIME (100-nanosecond intervals since January 1, 1601)
+	a.writeAVPair(&buf, avIDMsvAvNbComputerName, EncodeStringToUTF16LE(name))
+	// MsvAvDnsDomainName (DNS domain name) - same as NetBIOS (like Impacket)
+	a.writeAVPair(&buf, avIDMsvAvDnsDomainName, EncodeStringToUTF16LE(domain))
+	// MsvAvDnsComputerName (DNS computer name) - same as NetBIOS (like Impacket)
+	a.writeAVPair(&buf, avIDMsvAvDnsComputerName, EncodeStringToUTF16LE(name))
+	// MsvAvTimestamp - REQUIRED for Windows NTLMv2 MIC verification
 	timestampBytes := make([]byte, 8)
 	filetime := TimeToFiletime(now())
 	binary.LittleEndian.PutUint64(timestampBytes, filetime)
 	a.writeAVPair(&buf, avIDMsvAvTimestamp, timestampBytes)
 
-	// End of list - MsvAvEOL is required to terminate
+	// End of list
 	a.writeAVPair(&buf, avIDMsvAvEOL, nil)
 
 	return buf.Bytes()
 }
 
 func (a *NTLMAuthenticator) writeAVPair(buf *bytes.Buffer, avID uint16, value []byte) {
-	binary.Write(buf, binary.LittleEndian, avID)
-	binary.Write(buf, binary.LittleEndian, uint16(len(value)))
+	_ = binary.Write(buf, binary.LittleEndian, avID)
+	_ = binary.Write(buf, binary.LittleEndian, uint16(len(value)))
 	buf.Write(value)
 }
 
@@ -697,12 +668,6 @@ func (a *NTLMAuthenticator) wrapInSPNEGO(ntlmMsg []byte) []byte {
 
 	// Wrap in SEQUENCE (0x30) then in NegTokenResp context tag [1] (0xa1)
 	return a.asn1Wrap(0xa1, a.asn1Wrap(0x30, content))
-}
-
-// buildSPNEGOAccept builds a SPNEGO accept-complete response
-func (a *NTLMAuthenticator) buildSPNEGOAccept() []byte {
-	negState := a.asn1Wrap(0xa0, []byte{0x0a, 0x01, 0x00})
-	return a.asn1Wrap(0xa1, a.asn1Wrap(0x30, negState))
 }
 
 func (a *NTLMAuthenticator) asn1Wrap(tag byte, data []byte) []byte {

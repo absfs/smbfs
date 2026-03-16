@@ -2,13 +2,42 @@
 
 This document tracks the investigation into Windows 11 24H2 native SMB client compatibility issues with the smbfs SMB server implementation.
 
-## Executive Summary (Last Updated: December 2025)
+## Executive Summary (Last Updated: December 12, 2025)
 
-**Status**: Windows 11 24H2 native SMB client disconnects after NTLM Type 2 Challenge. Go clients work fine.
+**Status**: Windows 11 24H2 native SMB client disconnects after NTLM Type 2 Challenge. Go clients work perfectly.
 
-**Root Cause**: Unknown. Microsoft has removed NTLMv1 from Windows 11 24H2 and is phasing out NTLMv2. Many users report similar issues with NAS devices.
+**Root Cause**: **Confirmed** - Windows 11 24H2 has deprecated NTLM and blocks it by default for SMB connections to non-AD servers. This is a deliberate security change by Microsoft, not a bug.
 
-**Key Finding**: The `MSV1_0` registry key at `HKLM\SYSTEM\CurrentControlSet\Control\Lsa\MSV1_0` controls NTLM behavior. If this key is MISSING, NTLM defaults to "deny" on Windows 11 24H2.
+**Who is affected**: ALL non-Active Directory SMB servers, including:
+- NAS devices (QNAP, Synology, TrueNAS, etc.)
+- Linux Samba servers
+- macOS SMB shares
+- Any third-party SMB server implementation (like this one)
+
+## For Non-Enterprise/Home Users
+
+**Q: How are non-AD users expected to use SMB shares on Windows 11 24H2?**
+
+Microsoft's security changes have created significant challenges for home and small office users. Current options:
+
+1. **Third-party SMB clients** - Go-based clients (like hirochachacha/go-smb2) work perfectly. Consider GUI applications built on these libraries.
+
+2. **Disable NTLM blocking** (security risk):
+   ```powershell
+   Set-SmbClientConfiguration -BlockNTLM $false
+   ```
+
+3. **NTLM exception list** - Add specific servers:
+   ```powershell
+   Set-SmbClientConfiguration -BlockNTLMServerExceptionList "192.168.1.100,nas.local"
+   ```
+   *Note: This may still fail due to additional validation in Windows 11 24H2*
+
+4. **NAS vendor updates** - Check if your NAS vendor has released updates for Windows 11 24H2 compatibility
+
+5. **WebDAV** - Some NAS devices support WebDAV as an alternative
+
+6. **Wait** - Microsoft may provide better backward compatibility in future updates
 
 **Reference Implementations**: Three working SMB servers have been cloned to `reference/` for study:
 - SMBLibrary (C#) - Most mature

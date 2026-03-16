@@ -262,6 +262,7 @@ func TestParseConnectionString(t *testing.T) {
 				Server:      "server.example.com",
 				Share:       "public",
 				GuestAccess: true,
+				Username:    "guest",
 				Port:        445,
 			},
 		},

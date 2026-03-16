@@ -60,6 +60,10 @@ func (c *Config) setDefaults() {
 	if c.Port == 0 {
 		c.Port = 445
 	}
+	// For guest access, set username to "guest" if not specified
+	if c.GuestAccess && c.Username == "" {
+		c.Username = "guest"
+	}
 	if c.MaxIdle == 0 {
 		c.MaxIdle = 5
 	}
