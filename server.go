@@ -34,7 +34,8 @@ type Server struct {
 	connCount  int
 	shutdownCh chan struct{}
 
-	logger ServerLogger
+	logger       ServerLogger
+	kerberosAuth *KerberosAuthenticator // nil if Kerberos not configured
 }
 
 // connState tracks state for each connection
@@ -107,6 +108,17 @@ func NewServer(options ServerOptions) (*Server, error) {
 	}
 
 	s.handler = NewSMBHandler(s)
+
+	// Initialize Kerberos authenticator if keytab provided
+	if options.KeytabPath != "" {
+		kauth, err := NewKerberosAuthenticatorFromFile(options.KeytabPath, options.ServicePrincipal, s.logger)
+		if err != nil {
+			cancel()
+			return nil, fmt.Errorf("failed to initialize Kerberos auth: %w", err)
+		}
+		s.kerberosAuth = kauth
+		s.logger.Info("Kerberos authentication enabled (SPN: %s)", options.ServicePrincipal)
+	}
 
 	// Automatically add IPC$ share (required by Windows)
 	s.addIPCShare()

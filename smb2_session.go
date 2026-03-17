@@ -101,12 +101,20 @@ func (h *SMBHandler) handleSessionSetupImpl(state *connState, msg *SMB2Message, 
 	if session.Authenticator != nil {
 		authenticator = session.Authenticator
 	} else {
-		// Create NTLM authenticator for new sessions
-		authenticator = NewNTLMAuthenticator(
-			h.server.options.ServerName,
-			h.server.options.Users,
-			h.server.options.AllowGuest,
-		)
+		// Detect mechanism from SPNEGO blob and select authenticator
+		if h.server.kerberosAuth != nil && isKerberosBlob(securityBlob) {
+			// Use shared Kerberos authenticator (stateless, safe for concurrent use)
+			authenticator = h.server.kerberosAuth
+			h.server.logger.Debug("SESSION_SETUP: Using Kerberos authentication")
+		} else {
+			// Fall back to NTLM (requires per-session state for challenge/response)
+			authenticator = NewNTLMAuthenticator(
+				h.server.options.ServerName,
+				h.server.options.Users,
+				h.server.options.AllowGuest,
+			)
+			h.server.logger.Debug("SESSION_SETUP: Using NTLM authentication")
+		}
 		session.Authenticator = authenticator
 	}
 

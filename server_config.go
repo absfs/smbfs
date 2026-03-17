@@ -32,6 +32,10 @@ type ServerOptions struct {
 	Users      map[string]string // Server-level users: username -> password
 	AllowGuest bool              // Allow guest/anonymous access (default: true)
 
+	// Kerberos authentication
+	KeytabPath       string // Path to Kerberos keytab file (enables Kerberos auth)
+	ServicePrincipal string // Kerberos SPN, e.g. "cifs/server.example.com@EXAMPLE.COM"
+
 	// Logging
 	Logger ServerLogger // Logger interface (optional)
 	Debug  bool         // Enable debug logging
