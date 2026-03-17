@@ -296,6 +296,19 @@ server.ListenAndServe()
 | gokrb5 dependency is large | Only imported when keytab is configured; tree-shaken in builds |
 | Windows local accounts (non-domain) may not get tickets | Document that domain join or explicit `ksetup` is needed |
 
+## Release Plan
+
+**No release until Kerberos lands.** The current v0.9.1 tag is the last release.
+
+- **v0.10.0**: Tag after Kerberos auth is implemented and tested with Windows 11 24H2.
+  This is the "server release" — working SMB server with Kerberos + NTLM + Guest auth,
+  Windows native client support, 90%+ test coverage, and a stable server API surface.
+- **Pre-release**: Fix `go 1.23` directive in go.mod — CI passes on Go 1.21+, so the
+  directive should be lowered to `go 1.21` before release to avoid excluding consumers.
+- **No v0.9.2**: The server API (`ServerOptions`, `Server`, etc.) will change with
+  Kerberos (`KeytabPath`, `ServicePrincipal` fields). Releasing now would create a
+  throwaway API version.
+
 ## Out of Scope
 
 - **PKU2U / NEGOEX**: Certificate-based peer auth without KDC. Much harder, less documented.
